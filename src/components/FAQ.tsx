@@ -3,95 +3,124 @@
 import { useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 
+const fadeUp = {
+  initial: { y: 40, opacity: 0 },
+  whileInView: { y: 0, opacity: 1 },
+  viewport: { once: true, margin: "-100px" },
+  transition: { duration: 0.7, ease: [0.16, 1, 0.3, 1] as const },
+};
+
 const faqs = [
   {
-    q: "How long before I see results?",
-    a: "Infrastructure setup takes about 2 weeks. Campaigns launch in week 3. Most clients see their first booked meetings by week 3-4.",
+    q: "How long before I start getting meetings?",
+    a: "Infrastructure takes 2 weeks to warm up properly (there are no shortcuts here without destroying deliverability). Campaigns launch in week 3. Most clients see their first booked meetings in weeks 3-4, with consistent volume building through month 2.",
   },
   {
-    q: "Do you guarantee results?",
-    a: "We don't guarantee specific numbers because every market is different. But we optimize relentlessly and most clients see 12-18 qualified meetings per month within 60 days.",
+    q: "What does the engagement look like day-to-day?",
+    a: "We handle everything — infrastructure, data, copy, sending, reply management. You'll get a dedicated Slack channel, weekly performance reports, and bi-weekly strategy calls. When a prospect says \"yes,\" the meeting appears on your calendar. You just show up.",
   },
   {
     q: "What industries do you work with?",
-    a: "We work with B2B companies — SaaS, agencies, professional services, consulting, and tech-enabled businesses. If you sell to other businesses, we can likely help.",
+    a: "B2B companies with an offer that sells for $3K+ and a clear ICP. That usually means SaaS, agencies, professional services, consulting, and tech-enabled businesses. If you sell to other businesses and your deal size justifies outbound, we should talk.",
   },
   {
-    q: "Do I need to provide leads?",
-    a: "No. We handle everything — sourcing, verification, enrichment, and list building. You just tell us who your ideal customer is.",
+    q: "Do I own the infrastructure you build?",
+    a: "Yes. Every domain, mailbox, and sending account is purchased in your name or transferred to you. If we part ways, you keep everything.",
   },
   {
-    q: "What tools do you use?",
-    a: "We use a proprietary stack of best-in-class tools for sending, warmup, deliverability monitoring, lead sourcing, and CRM integration. We'll walk you through everything on our strategy call.",
+    q: "What makes you different from other agencies?",
+    a: "Most agencies use shared sending infrastructure, one data source (usually Apollo), and template copy. We build dedicated infrastructure from scratch, enrich data from 10+ providers with triple verification, and write custom copy per ICP. The difference shows up in deliverability and reply rates.",
   },
   {
-    q: "What if I've been burned by agencies before?",
-    a: "We get it. That's why we're transparent about our process, timelines, and what realistic results look like. We don't overpromise — we overdeliver.",
+    q: "What if it doesn't work?",
+    /* TODO: Once you define your actual guarantee/terms, update this answer */
+    a: "We'll know within 3-4 weeks whether the campaigns are gaining traction. If we're not seeing positive signals by week 6, we'll have an honest conversation about what's not working and whether it makes sense to continue. We don't lock you into long-term contracts.",
   },
 ];
 
-function FAQItem({ faq, index }: { faq: (typeof faqs)[0]; index: number }) {
-  const [open, setOpen] = useState(false);
-
+function FAQItem({ item, isOpen, toggle }: { item: typeof faqs[0]; isOpen: boolean; toggle: () => void }) {
   return (
-    <motion.div
-      initial={{ opacity: 0, y: 10 }}
-      whileInView={{ opacity: 1, y: 0 }}
-      viewport={{ once: true }}
-      transition={{ duration: 0.3, delay: index * 0.05 }}
-      className="border-b border-border"
-    >
+    <div className="border-b border-[#1E2028]">
       <button
-        onClick={() => setOpen(!open)}
-        className="flex w-full items-center justify-between py-5 text-left"
+        onClick={toggle}
+        className="w-full flex items-center justify-between py-6 text-left group"
+        aria-expanded={isOpen}
       >
-        <span className="pr-4 font-semibold">{faq.q}</span>
-        <svg
-          className={`h-5 w-5 shrink-0 text-text-secondary transition-transform ${open ? "rotate-180" : ""}`}
-          fill="none"
-          viewBox="0 0 24 24"
-          stroke="currentColor"
-          strokeWidth={2}
+        <span className="font-body font-medium text-[#EDEEF0] text-base md:text-lg pr-8 group-hover:text-[#60A5FA] transition-colors">
+          {item.q}
+        </span>
+        <span
+          className={`flex-shrink-0 w-6 h-6 flex items-center justify-center text-[#5A5C66] transition-transform duration-300 ${
+            isOpen ? "rotate-45" : ""
+          }`}
         >
-          <path strokeLinecap="round" strokeLinejoin="round" d="M19.5 8.25l-7.5 7.5-7.5-7.5" />
-        </svg>
+          <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5">
+            <line x1="8" y1="2" x2="8" y2="14" />
+            <line x1="2" y1="8" x2="14" y2="8" />
+          </svg>
+        </span>
       </button>
-      <AnimatePresence>
-        {open && (
+      <AnimatePresence initial={false}>
+        {isOpen && (
           <motion.div
             initial={{ height: 0, opacity: 0 }}
             animate={{ height: "auto", opacity: 1 }}
             exit={{ height: 0, opacity: 0 }}
-            transition={{ duration: 0.2 }}
+            transition={{ duration: 0.3, ease: [0.16, 1, 0.3, 1] as const }}
             className="overflow-hidden"
           >
-            <p className="pb-5 leading-relaxed text-text-secondary">{faq.a}</p>
+            <p className="pb-6 text-[#8B8D98] text-base leading-relaxed max-w-[680px]">
+              {item.a}
+            </p>
           </motion.div>
         )}
       </AnimatePresence>
-    </motion.div>
+    </div>
   );
 }
 
 export default function FAQ() {
+  const [openIndex, setOpenIndex] = useState<number | null>(null);
+
   return (
-    <section id="faq" className="relative px-6 py-24">
-      <div className="mx-auto max-w-3xl">
+    <section id="faq" className="border-t border-[#1E2028]">
+      <div className="max-w-[1200px] mx-auto px-6 py-[120px] max-md:py-20">
+        <motion.p {...fadeUp} className="font-mono text-xs uppercase tracking-widest text-[#5A5C66] mb-4">
+          FAQ
+        </motion.p>
+
         <motion.h2
-          initial={{ opacity: 0, y: 20 }}
-          whileInView={{ opacity: 1, y: 0 }}
-          viewport={{ once: true }}
-          transition={{ duration: 0.5 }}
-          className="text-center text-3xl font-bold tracking-tight sm:text-4xl"
+          {...fadeUp}
+          className="font-body font-bold text-3xl md:text-[40px] leading-tight text-[#EDEEF0] mb-12"
         >
-          Questions? We&apos;ve Got Answers.
+          Common questions before booking.
         </motion.h2>
 
-        <div className="mt-12">
+        <motion.div
+          initial="initial"
+          whileInView="visible"
+          viewport={{ once: true, margin: "-100px" }}
+          variants={{
+            visible: { transition: { staggerChildren: 0.05 } },
+          }}
+          className="max-w-[760px]"
+        >
           {faqs.map((faq, i) => (
-            <FAQItem key={i} faq={faq} index={i} />
+            <motion.div
+              key={i}
+              variants={{
+                initial: { y: 20, opacity: 0 },
+                visible: { y: 0, opacity: 1, transition: { duration: 0.5 } },
+              }}
+            >
+              <FAQItem
+                item={faq}
+                isOpen={openIndex === i}
+                toggle={() => setOpenIndex(openIndex === i ? null : i)}
+              />
+            </motion.div>
           ))}
-        </div>
+        </motion.div>
       </div>
     </section>
   );

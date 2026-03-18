@@ -9,18 +9,44 @@ const config: Config = {
   theme: {
     extend: {
       colors: {
-        background: "#0A0A0A",
-        foreground: "#F9FAFB",
-        primary: "#4F46E5",
-        "primary-light": "#6366F1",
-        accent: "#10B981",
-        "text-secondary": "#9CA3AF",
-        surface: "#141414",
-        "surface-light": "#1A1A1A",
-        border: "#262626",
+        bg: {
+          primary: "#08090A",
+          surface: "#111214",
+          "surface-hover": "#191B1F",
+        },
+        border: {
+          subtle: "#1E2028",
+          hover: "#2A2D38",
+        },
+        text: {
+          primary: "#EDEEF0",
+          secondary: "#8B8D98",
+          tertiary: "#5A5C66",
+        },
+        accent: {
+          primary: "#3B82F6",
+          "primary-hover": "#60A5FA",
+          glow: "rgba(59, 130, 246, 0.12)",
+          success: "#22C55E",
+          warm: "#F59E0B",
+        },
       },
       fontFamily: {
-        sans: ["var(--font-inter)", "system-ui", "sans-serif"],
+        display: ["var(--font-instrument-serif)", "Playfair Display", "serif"],
+        body: ["var(--font-satoshi)", "General Sans", "sans-serif"],
+        mono: ["var(--font-jetbrains-mono)", "monospace"],
+      },
+      maxWidth: {
+        content: "1200px",
+      },
+      animation: {
+        "dot-flow": "dotFlow 3s linear infinite",
+      },
+      keyframes: {
+        dotFlow: {
+          "0%": { transform: "translateX(0)" },
+          "100%": { transform: "translateX(100%)" },
+        },
       },
     },
   },
