@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from "react";
 import Link from "next/link";
+import { Logo } from "./Logo";
 
 export default function Navbar() {
   const [scrolled, setScrolled] = useState(false);
@@ -21,8 +22,8 @@ export default function Navbar() {
       }`}
     >
       <div className="w-full max-w-[1200px] mx-auto px-6 flex items-center justify-between">
-        <Link href="/" className="font-body font-bold text-lg text-[#EDEEF0]">
-          Cold<span className="text-[#3B82F6]">Craft</span>
+        <Link href="/" className="text-[#EDEEF0]">
+          <Logo size="md" />
         </Link>
 
         <div className="hidden md:flex items-center gap-8">
