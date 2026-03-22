@@ -1,0 +1,41 @@
+<svg width="220" height="48" viewBox="0 0 220 48" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <!--
+    ColdCraft HQ — Full Horizontal Lockup (Light background)
+    Same geometry and layout as logo.svg.
+    Stroke and wordmark primary colour swapped to near-black.
+    Use this when placing the logo on white or light-grey surfaces.
+  -->
+
+  <!-- ── Icon mark ─────────────────────────────── -->
+  <path
+    d="M 34 14 A 14.14 14.14 0 1 0 34 34"
+    stroke="#08090A"
+    stroke-width="3.5"
+    stroke-linecap="square"
+    fill="none"
+  />
+  <rect x="31.25" y="31.25" width="5.5" height="5.5" fill="#3B82F6"/>
+
+  <!-- ── Wordmark ───────────────────────────────── -->
+  <text
+    x="58"
+    y="31"
+    font-family="Satoshi, 'General Sans', system-ui, sans-serif"
+    font-weight="700"
+    font-size="22"
+    letter-spacing="-0.4"
+  >
+    <tspan fill="#08090A">Cold</tspan><tspan fill="#3B82F6">Craft</tspan>
+  </text>
+
+  <!-- "HQ" superscript label -->
+  <text
+    x="171"
+    y="20"
+    font-family="Satoshi, 'General Sans', system-ui, sans-serif"
+    font-weight="500"
+    font-size="11"
+    letter-spacing="0.04em"
+    fill="#8B8D98"
+  >HQ</text>
+</svg>
