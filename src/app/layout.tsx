@@ -49,25 +49,22 @@ const jetbrainsMono = JetBrains_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "ColdCraft — Cold Email Systems That Book B2B Meetings",
+  title: "ColdCraft HQ — Cold Email Systems That Book B2B Meetings",
   description:
     "We build and manage complete cold outreach infrastructure for B2B companies. Dedicated domains, verified data, specialist copywriting. Meetings on your calendar in 3 weeks.",
-  icons: {
-    icon: [{ url: "/favicon.svg", type: "image/svg+xml" }],
-  },
   openGraph: {
-    title: "ColdCraft — Cold Email Systems That Book B2B Meetings",
+    title: "ColdCraft HQ — Cold Email Systems That Book B2B Meetings",
     description:
-      "We build and manage complete cold outreach infrastructure for B2B companies.",
-    url: "https://www.coldcrafthq.com",
-    siteName: "ColdCraft",
+      "We build and manage complete cold outreach infrastructure for B2B companies. Dedicated domains, verified data, specialist copywriting. Meetings on your calendar in 3 weeks.",
+    url: "https://coldcrafthq.com",
+    siteName: "ColdCraft HQ",
     type: "website",
   },
   twitter: {
     card: "summary_large_image",
-    title: "ColdCraft — Cold Email Systems That Book B2B Meetings",
+    title: "ColdCraft HQ — Cold Email Systems That Book B2B Meetings",
     description:
-      "We build and manage complete cold outreach infrastructure for B2B companies.",
+      "We build and manage complete cold outreach infrastructure for B2B companies. Dedicated domains, verified data, specialist copywriting. Meetings on your calendar in 3 weeks.",
   },
 };
 

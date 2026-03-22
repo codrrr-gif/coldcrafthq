@@ -1,0 +1,14 @@
+<svg width="48" height="48" viewBox="0 0 48 48" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <!--
+    ColdCraft HQ — Logo Mark (Light background version)
+    Same geometry, stroke swapped to near-black.
+  -->
+  <path
+    d="M 34 14 A 14.14 14.14 0 1 0 34 34"
+    stroke="#08090A"
+    stroke-width="3.5"
+    stroke-linecap="square"
+    fill="none"
+  />
+  <rect x="31.25" y="31.25" width="5.5" height="5.5" fill="#3B82F6"/>
+</svg>
