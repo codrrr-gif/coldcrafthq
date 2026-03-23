@@ -37,7 +37,7 @@ export default function PipelinePage() {
   const [processing, setProcessing] = useState(false);
   const [actorStatus, setActorStatus] = useState<'idle' | 'running' | 'complete'>('idle');
   const pollRef = useRef<NodeJS.Timeout | null>(null);
-  const processRef = useRef<NodeJS.Timeout | null>(null);
+  const processingRef = useRef(false);
 
   const loadLeads = useCallback(async () => {
     const res = await fetch('/api/pipeline/leads?limit=100');
@@ -67,25 +67,31 @@ export default function PipelinePage() {
     }, 15000); // check every 15s
   }, [loadLeads]);
 
-  // Client-driven processing loop
+  // Client-driven processing loop — sequential to prevent pileup.
+  // Each call awaits the previous before firing the next; /process can take
+  // up to 300s so we must NOT use setInterval here.
   const startProcessing = useCallback(async () => {
+    if (processingRef.current) return;
+    processingRef.current = true;
     setProcessing(true);
-    processRef.current = setInterval(async () => {
-      const res = await fetch('/api/pipeline/process', { method: 'POST' });
-      const data = await res.json();
-      await loadLeads();
-      if (data.status === 'idle') {
-        clearInterval(processRef.current!);
-        setProcessing(false);
+    // eslint-disable-next-line no-constant-condition
+    while (true) {
+      try {
+        const res = await fetch('/api/pipeline/process', { method: 'POST' });
+        const data = await res.json();
+        await loadLeads();
+        if (data.status === 'idle' || !processingRef.current) break;
+      } catch {
+        break;
       }
-    }, 8000); // process one lead every 8s
-    // Kick immediately
-    fetch('/api/pipeline/process', { method: 'POST' }).then(() => loadLeads());
+    }
+    processingRef.current = false;
+    setProcessing(false);
   }, [loadLeads]);
 
   useEffect(() => () => {
     if (pollRef.current) clearInterval(pollRef.current);
-    if (processRef.current) clearInterval(processRef.current);
+    processingRef.current = false; // signal the sequential loop to stop on unmount
   }, []);
 
   // Stats

@@ -16,7 +16,7 @@ export async function getCachedPattern(domain: string): Promise<{
     .from('domain_patterns')
     .select('pattern, confidence')
     .eq('domain', domain)
-    .single();
+    .maybeSingle();
 
   if (!data || data.confidence < 60) return null;
   return { pattern: data.pattern, confidence: data.confidence };
@@ -38,7 +38,7 @@ export async function updateDomainPattern(
     .from('domain_patterns')
     .select('pattern, confidence, sample_count')
     .eq('domain', domain)
-    .single();
+    .maybeSingle();
 
   if (!existing) {
     await supabase.from('domain_patterns').insert({

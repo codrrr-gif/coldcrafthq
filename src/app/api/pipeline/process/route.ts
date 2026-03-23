@@ -7,7 +7,7 @@ import { supabase } from '@/lib/supabase/client';
 import { processPipelineLead } from '@/lib/pipeline/processor';
 
 export const dynamic = 'force-dynamic';
-export const maxDuration = 60;
+export const maxDuration = 300;
 
 export async function POST() {
   try {
@@ -17,7 +17,7 @@ export async function POST() {
       .eq('status', 'pending')
       .order('signal_score', { ascending: false })
       .limit(1)
-      .single();
+      .maybeSingle();
 
     if (!lead) {
       return NextResponse.json({ status: 'idle', message: 'No pending leads' });

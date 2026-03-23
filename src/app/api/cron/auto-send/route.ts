@@ -30,8 +30,10 @@ export async function GET(req: NextRequest) {
   // Trigger pipeline ingest (fire-and-forget — non-blocking)
   // On Hobby plan: piggybacks on this daily cron.
   // On Pro: add a dedicated /api/pipeline/ingest cron instead.
+  const ingestSecret = process.env.CRON_SECRET || process.env.WEBHOOK_SECRET;
   fetch(`${process.env.NEXT_PUBLIC_APP_URL || 'https://coldcrafthq.com'}/api/pipeline/ingest`, {
     method: 'POST',
+    headers: ingestSecret ? { Authorization: `Bearer ${ingestSecret}` } : {},
   }).catch(console.error);
 
   return NextResponse.json({

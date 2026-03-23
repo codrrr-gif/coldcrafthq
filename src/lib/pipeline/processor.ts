@@ -11,7 +11,7 @@ import { findEmail } from '@/lib/finder';
 import { researchLead } from '@/lib/enrichment/research-agent';
 import { getCampaignId } from '@/lib/enrichment/campaign-mapper';
 import { addLeadsToCampaign } from '@/lib/instantly';
-import type { PipelineLead, SignalType } from '@/lib/gtm/types';
+import type { PipelineLead } from '@/lib/gtm/types';
 
 async function updateLead(id: string, updates: Partial<PipelineLead>) {
   await supabase
@@ -21,7 +21,7 @@ async function updateLead(id: string, updates: Partial<PipelineLead>) {
 }
 
 export async function processPipelineLead(lead: PipelineLead): Promise<void> {
-  const { id, company_name, company_domain, signal_type, signal_summary } = lead;
+  const { id, company_name, company_domain, signal_type, signal_summary, signal_date } = lead;
 
   try {
     // Step 1: Find decision maker
@@ -64,6 +64,12 @@ export async function processPipelineLead(lead: PipelineLead): Promise<void> {
       return;
     }
 
+    // signal_type is required for research and campaign routing
+    if (!signal_type) {
+      await updateLead(id, { status: 'failed', failure_reason: 'missing_signal_type' });
+      return;
+    }
+
     // Step 3: AI Research
     await updateLead(id, { status: 'researching' });
     const research = await researchLead({
@@ -72,7 +78,7 @@ export async function processPipelineLead(lead: PipelineLead): Promise<void> {
       firstName: contact.first_name,
       lastName: contact.last_name,
       title: contact.title,
-      signalType: signal_type as SignalType,
+      signalType: signal_type,
       signalSummary: signal_summary || '',
     });
 
@@ -85,7 +91,7 @@ export async function processPipelineLead(lead: PipelineLead): Promise<void> {
     });
 
     // Step 4: Push to Instantly
-    const campaignId = getCampaignId(signal_type as SignalType);
+    const campaignId = getCampaignId(signal_type);
     if (!campaignId) {
       await updateLead(id, { status: 'ready', failure_reason: 'no_campaign_configured' });
       return;
@@ -96,6 +102,12 @@ export async function processPipelineLead(lead: PipelineLead): Promise<void> {
       first_name: contact.first_name,
       last_name: contact.last_name,
       company_name: company_name || undefined,
+      title: contact.title || undefined,
+      personalized_opener: research.personalized_opener || undefined,
+      signal_summary: signal_summary || undefined,
+      research_summary: research.research_summary || undefined,
+      signal_type: signal_type || undefined,
+      signal_date: signal_date || undefined,
     }]);
 
     if (pushResult.error) {

@@ -32,9 +32,9 @@ export async function findDecisionMaker(
   try {
     const { runId, datasetId } = await runGoogleSearch(queries, 3);
 
-    // Poll for completion (max 30s)
+    // Poll for completion (max 120s — Apify Google Search can take 60-120s)
     let items: Record<string, unknown>[] = [];
-    for (let i = 0; i < 6; i++) {
+    for (let i = 0; i < 24; i++) {
       await new Promise((r) => setTimeout(r, 5000));
       const status = await getRunStatus(runId);
       if (status.status === 'SUCCEEDED') {
