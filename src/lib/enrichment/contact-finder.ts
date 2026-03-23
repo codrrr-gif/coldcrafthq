@@ -16,23 +16,18 @@ export interface Contact {
   source: string;
 }
 
-const TARGET_TITLE_SEARCHES = [
-  'VP Sales',
-  'Head of Sales',
-  'Chief Revenue Officer',
-  'VP Marketing',
-  'Head of Growth',
-  'CEO Founder',
-];
 
 export async function findDecisionMaker(
   companyName: string,
   companyDomain: string,
 ): Promise<Contact | null> {
-  // Search Google for the decision maker at this company
-  const queries = TARGET_TITLE_SEARCHES.slice(0, 3).map(
-    (title) => `site:linkedin.com/in "${companyName}" "${title}"`
-  );
+  // Search Google for the decision maker at this company.
+  // Include domain in the last query to narrow results for ambiguous company names.
+  const queries = [
+    `site:linkedin.com/in "${companyName}" "VP Sales"`,
+    `site:linkedin.com/in "${companyName}" "Chief Revenue Officer" OR "Head of Sales"`,
+    `site:linkedin.com/in "${companyName}" ${companyDomain} "VP Marketing" OR "Head of Growth"`,
+  ];
 
   try {
     const { runId, datasetId } = await runGoogleSearch(queries, 3);
