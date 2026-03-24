@@ -1,0 +1,83 @@
+// src/lib/voice/call-scheduler.ts
+// Determines which pushed leads should receive a voice call follow-up on day 5.
+// Only calls if: VAPI_API_KEY is set, lead has phone number, no prior voice touchpoint.
+
+import { supabase } from '@/lib/supabase/client';
+import { initiateCall } from './vapi-client';
+
+export async function scheduleFollowUpCalls(): Promise<number> {
+  if (!process.env.VAPI_API_KEY) return 0;
+
+  const fiveDaysAgo = new Date(Date.now() - 5 * 24 * 60 * 60 * 1000).toISOString();
+  const fourDaysAgo = new Date(Date.now() - 4 * 24 * 60 * 60 * 1000).toISOString();
+
+  // Leads pushed 4-5 days ago (day 5 window)
+  const { data: leads } = await supabase
+    .from('pipeline_leads')
+    .select('*')
+    .eq('status', 'pushed')
+    .lt('pushed_at', fiveDaysAgo)
+    .gte('pushed_at', fourDaysAgo)
+    .not('first_name', 'is', null)
+    .limit(10);
+
+  if (!leads?.length) return 0;
+  let called = 0;
+
+  for (const lead of leads) {
+    // Skip if already has a voice touchpoint
+    const { count } = await supabase
+      .from('touchpoints')
+      .select('*', { count: 'exact', head: true })
+      .eq('lead_id', lead.id)
+      .eq('channel', 'voice');
+
+    if ((count || 0) > 0) continue;
+
+    // Phone number must be in research_data
+    const phoneNumber = (lead.research_data as Record<string, unknown> | null)?.phone_number as string | undefined;
+
+    if (!phoneNumber) {
+      // Log that we wanted to call but had no number
+      await supabase.from('touchpoints').insert({
+        lead_id: lead.id,
+        channel: 'voice',
+        touch_type: 'voice_call',
+        status: 'failed',
+        content: 'No phone number available',
+      }).then(null, console.error);
+      continue;
+    }
+
+    try {
+      const result = await initiateCall({
+        phoneNumber,
+        firstName: lead.first_name || '',
+        companyName: lead.company_name || '',
+        personalizedContext: lead.personalized_opener || lead.signal_summary || '',
+      });
+
+      await supabase.from('voice_calls').insert({
+        lead_id: lead.id,
+        vapi_call_id: result.callId,
+        phone_number: phoneNumber,
+        status: 'initiated',
+      }).then(null, console.error);
+
+      await supabase.from('touchpoints').insert({
+        lead_id: lead.id,
+        channel: 'voice',
+        touch_type: 'voice_call',
+        status: 'sent',
+        external_id: result.callId,
+        content: `Calling ${lead.first_name} at ${lead.company_name}`,
+      }).then(null, console.error);
+
+      called++;
+    } catch (err) {
+      console.error(`[voice] Call failed for lead ${lead.id}:`, err);
+    }
+  }
+
+  return called;
+}
