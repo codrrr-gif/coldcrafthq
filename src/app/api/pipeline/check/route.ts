@@ -54,7 +54,17 @@ export async function POST() {
       else if (source.name === 'linkedin_jobs_sales') parsed = parseJobPostingSignals(items);
       else if (source.name === 'google_news_leadership') parsed = parseLeadershipSignals(items);
 
-      for (const signal of parsed) {
+      for (let signal of parsed) {
+        // Domain fallback: derive synthetic domain from company name if missing
+        // Lets the signal through ICP; pipeline will validate at enrichment stage
+        if (!signal.company_domain && signal.company_name) {
+          const syntheticDomain = signal.company_name
+            .toLowerCase()
+            .replace(/[^a-z0-9]+/g, '')
+            .slice(0, 30) + '.com';
+          signal = { ...signal, company_domain: syntheticDomain };
+        }
+
         const icpResult = filterSignalByIcp(signal);
         if (!icpResult.passes) continue;
 
