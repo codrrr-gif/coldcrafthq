@@ -12,6 +12,7 @@ import { researchLead } from '@/lib/enrichment/research-agent';
 import { getCampaignId } from '@/lib/enrichment/campaign-mapper';
 import { addLeadsToCampaign } from '@/lib/instantly';
 import type { PipelineLead } from '@/lib/gtm/types';
+import { addToWatchlist } from '@/lib/champions/watchlist';
 
 async function updateLead(id: string, updates: Partial<PipelineLead>) {
   await supabase
@@ -120,6 +121,17 @@ export async function processPipelineLead(lead: PipelineLead): Promise<void> {
       status: 'pushed',
       pushed_at: new Date().toISOString(),
     });
+
+    // Add to champion watchlist for job-change monitoring
+    await addToWatchlist({
+      first_name: contact.first_name,
+      last_name: contact.last_name,
+      email: emailResult.email,
+      linkedin_url: contact.linkedin_url,
+      title: contact.title,
+      company_name: company_name || null,
+      company_domain,
+    }).catch(console.error);
 
   } catch (err) {
     console.error(`Pipeline processor error for lead ${id}:`, err);
