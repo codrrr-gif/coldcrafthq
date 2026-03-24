@@ -15,6 +15,10 @@ const SIGNAL_RESEARCH_PROMPTS: Record<SignalType, string> = {
   job_posting: 'What does this hiring signal indicate about their growth stage and operational needs? What pain points does this role suggest they have?',
   leadership_change: 'What has this person built at their previous company? What are they likely to change or evaluate first in their new role? What tools/vendors do people in this role typically evaluate?',
   news: 'What does this news signal about the company direction? What opportunities or challenges does it create?',
+  intent: 'What does their interest in this topic indicate about their buying stage? What pain points are they researching solutions for?',
+  tech_stack: 'What does their current tech stack tell us about their needs? Are they likely evaluating alternatives? What problems does their current setup typically cause?',
+  competitor_review: 'They left a negative review of a competitor. What frustrations did they express? What would they want in a replacement? What is the ideal pitch for someone actively dissatisfied?',
+  job_change: 'This person recently moved companies. What typically gets re-evaluated in the first 90 days of a new sales/marketing leadership role? What tools/vendors will they be looking at?',
 };
 
 async function searchPerplexity(query: string): Promise<string> {

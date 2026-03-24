@@ -4,7 +4,11 @@ import type { SignalType } from '@/lib/gtm/types';
 export const SIGNAL_SCORES: Record<SignalType, number> = {
   funding: 100,
   leadership_change: 90,
+  competitor_review: 85,
+  intent: 80,
+  job_change: 75,
   job_posting: 70,
+  tech_stack: 65,
   news: 50,
 };
 

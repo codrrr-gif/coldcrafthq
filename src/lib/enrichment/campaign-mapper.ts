@@ -12,6 +12,11 @@ export function getCampaignId(signalType: SignalType): string | null {
     job_posting: process.env.CAMPAIGN_ID_JOB_POSTING,
     leadership_change: process.env.CAMPAIGN_ID_LEADERSHIP,
     news: process.env.CAMPAIGN_ID_NEWS,
+    // V6 signal types — fall back to closest campaign
+    intent: process.env.CAMPAIGN_ID_FUNDING,
+    tech_stack: process.env.CAMPAIGN_ID_JOB_POSTING,
+    competitor_review: process.env.CAMPAIGN_ID_FUNDING,
+    job_change: process.env.CAMPAIGN_ID_LEADERSHIP,
   };
   return mapping[signalType] || process.env.CAMPAIGN_ID_DEFAULT || null;
 }
