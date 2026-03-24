@@ -221,6 +221,62 @@ export interface VoiceCall {
   ended_at: string | null;
 }
 
+// ── V7 Self-learning types ────────────────────────────────────────────────────
+
+export interface LearningWeight {
+  id: string;
+  weight_type: 'signal' | 'icp_industry' | 'icp_headcount' | 'icp_funding';
+  dimension_value: string;
+  learned_score: number;
+  sample_count: number;
+  leads_pushed: number;
+  leads_replied: number;
+  leads_interested: number;
+  conversion_rate: number;
+  last_updated_at: string;
+}
+
+export interface OpenerPattern {
+  id: string;
+  signal_type: string;
+  pattern_summary: string;
+  example_opener: string;
+  lead_id: string | null;
+  signal_score: number | null;
+  industry: string | null;
+  company_size: string | null;
+  times_used: number;
+  created_at: string;
+}
+
+export interface FunnelMetrics {
+  overall: {
+    signals_total: number;
+    pushed: number;
+    replied: number;
+    interested: number;
+    meeting: number;
+    won: number;
+    push_rate: number;
+    reply_rate: number;
+    interest_rate: number;
+    meeting_rate: number;
+  };
+  by_signal_type: Array<{
+    signal_type: string;
+    pushed: number;
+    interested: number;
+    conversion_rate: number;
+    learned_score: number | null;
+    default_score: number;
+  }>;
+  top_industries: Array<{ industry: string; meeting_count: number; win_rate: number }>;
+  top_headcount: Array<{ range: string; meeting_count: number; win_rate: number }>;
+  top_funding: Array<{ stage: string; meeting_count: number; win_rate: number }>;
+  sample_openers: OpenerPattern[];
+  last_optimized_at: string | null;
+}
+
 // Apify types
 export interface ApifyRunResult {
   id: string;

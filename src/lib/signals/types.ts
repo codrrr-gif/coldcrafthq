@@ -1,4 +1,5 @@
 // src/lib/signals/types.ts
+import { supabase } from '@/lib/supabase/client';
 import type { SignalType } from '@/lib/gtm/types';
 
 export const SIGNAL_SCORES: Record<SignalType, number> = {
@@ -11,6 +12,22 @@ export const SIGNAL_SCORES: Record<SignalType, number> = {
   tech_stack: 65,
   news: 50,
 };
+
+// Dynamic version — reads learned score from DB, falls back to hardcoded default.
+// Use this wherever signal scoring happens (ICP filter, scorer, pipeline ingest).
+export async function getSignalScore(signalType: SignalType): Promise<number> {
+  try {
+    const { data } = await supabase
+      .from('learning_weights')
+      .select('learned_score')
+      .eq('weight_type', 'signal')
+      .eq('dimension_value', signalType)
+      .maybeSingle();
+    return data?.learned_score ?? SIGNAL_SCORES[signalType];
+  } catch {
+    return SIGNAL_SCORES[signalType];
+  }
+}
 
 // ICP config from env vars with sensible defaults
 export function getIcpConfig() {

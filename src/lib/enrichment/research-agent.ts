@@ -10,6 +10,36 @@ import type { ResearchResult, SignalType } from '@/lib/gtm/types';
 
 const client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
 
+async function getOpenerExamples(signalType: SignalType): Promise<string> {
+  try {
+    const { createClient } = await import('@supabase/supabase-js');
+    const sb = createClient(
+      process.env.NEXT_PUBLIC_SUPABASE_URL!,
+      process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
+    );
+    const { data } = await sb
+      .from('opener_patterns')
+      .select('pattern_summary, example_opener')
+      .eq('signal_type', signalType)
+      .order('created_at', { ascending: false })
+      .limit(3);
+
+    if (!data?.length) return '';
+
+    // Increment times_used in background
+    for (const row of data as Array<{ pattern_summary: string; example_opener: string; id?: string }>) {
+      if (row.id) sb.from('opener_patterns').update({ times_used: 1 }).eq('id', row.id).then(null, () => null);
+    }
+
+    const examples = (data as Array<{ pattern_summary: string; example_opener: string }>)
+      .map((p, i) => `Example ${i + 1}: "${p.example_opener}" (Pattern: ${p.pattern_summary})`)
+      .join('\n');
+    return `\nPROVEN OPENER PATTERNS (from leads that replied "interested"):\n${examples}\n`;
+  } catch {
+    return '';
+  }
+}
+
 const SIGNAL_RESEARCH_PROMPTS: Record<SignalType, string> = {
   funding: 'What are they planning to do with the funding? What are they hiring for? What growth stage are they at? What problems will they face scaling?',
   job_posting: 'What does this hiring signal indicate about their growth stage and operational needs? What pain points does this role suggest they have?',
@@ -51,6 +81,9 @@ export async function researchLead(params: {
 }): Promise<ResearchResult> {
   const { companyName, domain, firstName, lastName, title, signalType, signalSummary } = params;
 
+  // Fetch proven opener patterns (non-blocking — if it fails, we proceed without)
+  const openerExamples = await getOpenerExamples(signalType).catch(() => '');
+
   // 3 parallel Perplexity searches
   const [companyResearch, signalContext, contactResearch] = await Promise.all([
     searchPerplexity(
@@ -84,7 +117,7 @@ ${signalContext}
 
 CONTACT PROFILE:
 ${contactResearch}
-
+${openerExamples}
 Write:
 1. A 1-sentence personalized opener for a cold email that naturally references the specific signal
 2. Three bullet pain points this company likely has RIGHT NOW given the signal
