@@ -9,6 +9,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { processTimeoutAutoSends } from '@/lib/ai/auto-send';
 import { evaluateSilentOutcomes, tuneThresholds } from '@/lib/ai/outcomes';
+import { runDailySequence } from '@/lib/orchestrator/sequence-runner';
 
 export const dynamic = 'force-dynamic';
 
@@ -21,10 +22,14 @@ export async function GET(req: NextRequest) {
     }
   }
 
-  const [autoSendResult, silenceCount, thresholdResult] = await Promise.all([
+  const [autoSendResult, silenceCount, thresholdResult, sequenceResult] = await Promise.all([
     processTimeoutAutoSends(),
     evaluateSilentOutcomes().catch(() => 0),
     tuneThresholds().catch(() => ({ adjusted: 0 })),
+    runDailySequence().catch((err) => {
+      console.error('[cron] Sequence runner failed:', err);
+      return { linkedin_connects: 0, linkedin_dms: 0, voice_calls: 0, job_changes: 0, heat_scores_updated: 0 };
+    }),
   ]);
 
   // Trigger pipeline ingest (fire-and-forget — non-blocking)
@@ -43,6 +48,7 @@ export async function GET(req: NextRequest) {
       silence_scored: silenceCount,
       thresholds_adjusted: thresholdResult.adjusted,
     },
+    sequence: sequenceResult,
     timestamp: new Date().toISOString(),
   });
 }

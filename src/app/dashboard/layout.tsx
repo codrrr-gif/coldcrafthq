@@ -7,6 +7,8 @@ const navItems = [
   { href: '/dashboard', label: 'Replies', icon: 'inbox' },
   { href: '/dashboard/verify', label: 'Verify', icon: 'shield' },
   { href: '/dashboard/pipeline', label: 'Pipeline', icon: 'zap' },
+  { href: '/dashboard/tam', label: 'TAM', icon: 'map' },
+  { href: '/dashboard/heat', label: 'Heat', icon: 'fire' },
   { href: '/dashboard/knowledge', label: 'Knowledge Base', icon: 'book' },
   { href: '/dashboard/settings', label: 'Settings', icon: 'settings' },
 ];
@@ -36,6 +38,17 @@ const iconMap: Record<string, JSX.Element> = {
   zap: (
     <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
       <path strokeLinecap="round" strokeLinejoin="round" d="M3.75 13.5l10.5-11.25L12 10.5h8.25L9.75 21.75 12 13.5H3.75z" />
+    </svg>
+  ),
+  map: (
+    <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
+      <path strokeLinecap="round" strokeLinejoin="round" d="M9 6.75V15m6-6v8.25m.503 3.498l4.875-2.437c.381-.19.622-.58.622-1.006V4.82c0-.836-.88-1.38-1.628-1.006l-3.869 1.934c-.317.159-.69.159-1.006 0L9.503 3.252a1.125 1.125 0 00-1.006 0L3.622 5.689C3.24 5.88 3 6.27 3 6.695V19.18c0 .836.88 1.38 1.628 1.006l3.869-1.934c.317-.159.69-.159 1.006 0l4.994 2.497c.317.158.69.158 1.006 0z" />
+    </svg>
+  ),
+  fire: (
+    <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
+      <path strokeLinecap="round" strokeLinejoin="round" d="M15.362 5.214A8.252 8.252 0 0112 21 8.25 8.25 0 016.038 7.047 8.287 8.287 0 009 9.6a8.983 8.983 0 013.361-6.867 8.21 8.21 0 003 2.48z" />
+      <path strokeLinecap="round" strokeLinejoin="round" d="M12 18a3.75 3.75 0 00.495-7.467 5.99 5.99 0 00-1.925 3.545 5.975 5.975 0 01-2.133-1A3.75 3.75 0 0012 18z" />
     </svg>
   ),
 };
