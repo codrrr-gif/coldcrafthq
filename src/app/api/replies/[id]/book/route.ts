@@ -37,5 +37,13 @@ export async function POST(
     lead_name: reply.lead_name,
   }).catch(console.error);
 
+  // Log meeting_booked activity to Close
+  const { logActivityToClose } = await import('@/lib/crm/close-sync');
+  logActivityToClose({
+    type: 'meeting_booked',
+    leadEmail: reply.lead_email,
+    note: `Manual booking via dashboard — reply #${reply.id}`,
+  }).catch(() => {});
+
   return NextResponse.json({ success: true, outcome: 'meeting_booked' });
 }

@@ -205,3 +205,16 @@ export async function getLeadLabels(): Promise<{ id: string; name: string }[]> {
   const data = await res.json();
   return data.data || data || [];
 }
+
+export async function listSendingAccounts(): Promise<Array<{ email: string; daily_limit?: number }>> {
+  const key = getApiKey();
+  const res = await fetch('https://api.instantly.ai/api/v2/accounts?limit=100', {
+    headers: { Authorization: `Bearer ${key}` },
+  });
+  if (!res.ok) return [];
+  const data = await res.json();
+  return (data.items || data.data || data || []).map((a: Record<string, unknown>) => ({
+    email: a.email as string,
+    daily_limit: a.daily_limit as number | undefined,
+  }));
+}

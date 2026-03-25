@@ -253,3 +253,115 @@ export async function notifyLegalThreat(
     ],
   });
 }
+
+// Generic Slack notification — used by health monitor and other system alerts
+export async function notifySlack(message: string, level: 'info' | 'warning' | 'error' = 'info'): Promise<void> {
+  const emoji = level === 'error' ? '🔴' : level === 'warning' ? '🟡' : 'ℹ️';
+  await sendSlack({
+    text: `${emoji} ${message}`,
+    blocks: [
+      {
+        type: 'section',
+        text: { type: 'mrkdwn', text: `${emoji} ${message}` },
+      },
+    ],
+  });
+}
+
+// ============================================
+// Production Error Alerting
+// ============================================
+
+// Cron job failure — top-level crash of a scheduled job
+export async function notifyCronFailure(
+  cronName: string,
+  error: unknown
+): Promise<void> {
+  const errMsg = error instanceof Error ? error.message : String(error);
+  const stack = error instanceof Error ? error.stack?.split('\n').slice(0, 3).join('\n') : '';
+  await sendSlack({
+    text: `🔴 CRON FAILURE: ${cronName}`,
+    blocks: [
+      {
+        type: 'header',
+        text: { type: 'plain_text', text: '🔴 Cron Job Failed', emoji: true },
+      },
+      {
+        type: 'section',
+        fields: [
+          { type: 'mrkdwn', text: `*Job:*\n\`${cronName}\`` },
+          { type: 'mrkdwn', text: `*Time:*\n${new Date().toISOString()}` },
+        ],
+      },
+      {
+        type: 'section',
+        text: { type: 'mrkdwn', text: `*Error:*\n\`\`\`${errMsg}\`\`\`` },
+      },
+      ...(stack ? [{
+        type: 'context' as const,
+        elements: [{ type: 'mrkdwn' as const, text: `\`\`\`${stack}\`\`\`` }],
+      }] : []),
+    ],
+  });
+}
+
+// Apify actor failure — actor timed out, failed, or aborted
+export async function notifyActorFailure(
+  sourceName: string,
+  runId: string,
+  status: string
+): Promise<void> {
+  await sendSlack({
+    text: `🟡 Apify actor failed: ${sourceName} (${status})`,
+    blocks: [
+      {
+        type: 'section',
+        text: {
+          type: 'mrkdwn',
+          text: `🟡 *Apify actor failed*\n*Source:* \`${sourceName}\`\n*Run ID:* \`${runId}\`\n*Status:* \`${status}\``,
+        },
+      },
+      {
+        type: 'context',
+        elements: [
+          { type: 'mrkdwn', text: 'Check Apify console for details. The run ID has been cleared so the next cron will retry.' },
+        ],
+      },
+    ],
+  });
+}
+
+// Enrichment batch alert — too many leads failed in one run
+export async function notifyEnrichmentAlert(
+  failed: number,
+  total: number,
+  recentErrors: string[]
+): Promise<void> {
+  const errorSample = recentErrors.slice(0, 3).map(e => `• ${e}`).join('\n');
+  await sendSlack({
+    text: `🟡 Enrichment alert: ${failed}/${total} leads failed`,
+    blocks: [
+      {
+        type: 'header',
+        text: { type: 'plain_text', text: '🟡 Enrichment Failure Spike', emoji: true },
+      },
+      {
+        type: 'section',
+        fields: [
+          { type: 'mrkdwn', text: `*Failed:*\n${failed} of ${total}` },
+          { type: 'mrkdwn', text: `*Failure Rate:*\n${Math.round((failed / total) * 100)}%` },
+        ],
+      },
+      {
+        type: 'section',
+        text: { type: 'mrkdwn', text: `*Recent errors:*\n${errorSample || 'No details captured'}` },
+      },
+      {
+        type: 'context',
+        elements: [
+          { type: 'mrkdwn', text: 'Check pipeline leads with status=failed for details. May indicate an API key issue or rate limit.' },
+        ],
+      },
+    ],
+  });
+}

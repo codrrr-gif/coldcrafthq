@@ -12,6 +12,8 @@ import {
   findLeadByEmail,
   createLead,
   addNoteToLead,
+  logEmail,
+  logCall,
   createOpportunity,
   getOpportunityStatuses,
   updateLead,
@@ -175,5 +177,79 @@ export async function createOpportunityInCrm(params: {
     await addNoteToLead(lead.id, 'Meeting booked — opportunity created automatically via ColdCraft.');
   } catch (err) {
     console.error('[CRM] createOpportunityInCrm failed:', err);
+  }
+}
+
+// ── Activity Timeline Enrichment ─────────────────────────────────────────
+// Logs Instantly touchpoints as Close CRM activities (fire-and-forget).
+
+type ActivityType =
+  | 'email_sent' | 'email_replied' | 'voice_call'
+  | 'linkedin_connect' | 'linkedin_dm' | 'bounce' | 'meeting_booked';
+
+interface LogActivityParams {
+  type: ActivityType;
+  leadEmail: string;
+  subject?: string;
+  body?: string;
+  direction?: 'outgoing' | 'incoming';
+  duration?: number;
+  outcome?: string;
+  note?: string;
+}
+
+export async function logActivityToClose(params: LogActivityParams): Promise<void> {
+  try {
+    const lead = await findLeadByEmail(params.leadEmail);
+    if (!lead) return; // No Close lead found, skip silently
+
+    switch (params.type) {
+      case 'email_sent':
+        await logEmail(lead.id, {
+          direction: 'outgoing',
+          subject: params.subject || 'ColdCraft Outbound',
+          body_text: params.body || '',
+          status: 'sent',
+        });
+        break;
+
+      case 'email_replied':
+        await logEmail(lead.id, {
+          direction: 'incoming',
+          subject: params.subject || 'Re: ColdCraft Outbound',
+          body_text: params.body || '',
+          status: 'received',
+        });
+        break;
+
+      case 'voice_call':
+        await logCall(lead.id, {
+          direction: 'outgoing',
+          duration: params.duration,
+          note: params.note || `Voice call — ${params.outcome || 'completed'}`,
+          status: params.outcome === 'no_answer' ? 'no-answer'
+            : params.outcome === 'voicemail' ? 'voicemail'
+            : 'completed',
+        });
+        break;
+
+      case 'linkedin_connect':
+        await addNoteToLead(lead.id, `[LinkedIn] Connection request sent${params.note ? ': ' + params.note : ''}`);
+        break;
+
+      case 'linkedin_dm':
+        await addNoteToLead(lead.id, `[LinkedIn] DM sent${params.note ? ': ' + params.note : ''}`);
+        break;
+
+      case 'bounce':
+        await addNoteToLead(lead.id, `[BOUNCE] ${params.note || 'Hard bounce recorded — blocked across systems'}`);
+        break;
+
+      case 'meeting_booked':
+        await addNoteToLead(lead.id, `[MEETING] ${params.note || 'Meeting booked via ColdCraft'}`);
+        break;
+    }
+  } catch (err) {
+    console.error(`[logActivityToClose] Failed for ${params.leadEmail}:`, err);
   }
 }

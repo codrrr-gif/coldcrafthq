@@ -30,7 +30,7 @@ import {
   notifyReviewNeeded,
   notifyLegalThreat,
 } from '@/lib/slack';
-import { markInterestedInCrm } from '@/lib/crm/close-sync';
+import { markInterestedInCrm, logActivityToClose } from '@/lib/crm/close-sync';
 import type { ThreadMessage } from '@/lib/types';
 import type { SubCategory } from '@/lib/ai/playbooks';
 
@@ -264,6 +264,15 @@ export async function POST(req: NextRequest) {
         reply_summary: categorization.summary,
       }).catch(console.error);
     }
+
+    // Log inbound reply to Close timeline
+    logActivityToClose({
+      type: 'email_replied',
+      leadEmail: lead_email,
+      subject: 'Re: ColdCraft Outbound',
+      body: reply_text?.substring(0, 500) || '',
+      direction: 'incoming',
+    }).catch(() => {});
 
     // Step 6: Slack notifications
     if (category === 'interested') {

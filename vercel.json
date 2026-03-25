@@ -20,6 +20,18 @@
     {
       "path": "/api/tam/discover",
       "schedule": "0 11 * * 1"
+    },
+    {
+      "path": "/api/cron/sync-close",
+      "schedule": "3,33 * * * *"
+    },
+    {
+      "path": "/api/cron/revenue-check",
+      "schedule": "3 13 * * *"
+    },
+    {
+      "path": "/api/cron/account-health",
+      "schedule": "7 12 * * *"
     }
   ]
 }

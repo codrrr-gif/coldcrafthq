@@ -140,6 +140,73 @@ export async function addNoteToLead(leadId: string, note: string): Promise<void>
   });
 }
 
+// ── Activity logging ─────────────────────────────────────────────────────────
+
+export async function logEmail(
+  leadId: string,
+  params: {
+    direction: 'outgoing' | 'incoming';
+    subject: string;
+    body_text: string;
+    status?: 'sent' | 'received';
+  }
+): Promise<void> {
+  await closeRequest('/activity/email/', {
+    method: 'POST',
+    body: JSON.stringify({
+      lead_id: leadId,
+      direction: params.direction,
+      subject: params.subject,
+      body_text: params.body_text,
+      status: params.status || (params.direction === 'outgoing' ? 'sent' : 'received'),
+    }),
+  });
+}
+
+export async function logCall(
+  leadId: string,
+  params: {
+    direction: 'outgoing' | 'incoming';
+    duration?: number;
+    note?: string;
+    status?: 'completed' | 'no-answer' | 'voicemail';
+  }
+): Promise<void> {
+  await closeRequest('/activity/call/', {
+    method: 'POST',
+    body: JSON.stringify({
+      lead_id: leadId,
+      direction: params.direction,
+      duration: params.duration || 0,
+      note: params.note || '',
+      status: params.status || 'completed',
+    }),
+  });
+}
+
+export async function createTask(
+  leadId: string,
+  params: {
+    text: string;
+    due_date?: string;
+    assigned_to?: string;
+  }
+): Promise<void> {
+  await closeRequest('/task/', {
+    method: 'POST',
+    body: JSON.stringify({
+      lead_id: leadId,
+      text: params.text,
+      ...(params.due_date ? { date: params.due_date } : {}),
+      ...(params.assigned_to ? { assigned_to: params.assigned_to } : {}),
+    }),
+  });
+}
+
+export async function getCurrentUser(): Promise<{ id: string; first_name: string; email: string }> {
+  return closeRequest<{ id: string; first_name: string; email: string }>('/me/');
+}
+
 // ── Opportunity operations ─────────────────────────────────────────────────────
 
 export async function getOpportunityStatuses(): Promise<CloseOpportunityStatus[]> {

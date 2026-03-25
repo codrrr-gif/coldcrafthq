@@ -52,10 +52,21 @@ export async function optimizeSignalWeights(): Promise<number> {
     const conversionRate = pushedN > 0 ? interestedN / pushedN : 0;
     const learnedScore = Math.max(10, Math.min(200, Math.round(conversionRate * SCALE_FACTOR)));
 
+    // Revenue-weighted boost: signal types that produce won deals get extra weight
+    const { data: revenueData } = await supabase
+      .from('revenue_attribution')
+      .select('signal_type, deal_value, outcome')
+      .eq('signal_type', signalType);
+
+    const wonDeals = (revenueData || []).filter((r) => r.outcome === 'won');
+    const totalRevenue = wonDeals.reduce((sum, r) => sum + (r.deal_value || 0), 0);
+    const revenueBoost = wonDeals.length > 0 ? Math.min(totalRevenue / 10000, 50) : 0;
+    const finalScore = Math.min(200, learnedScore + Math.round(revenueBoost));
+
     const { error } = await supabase.from('learning_weights').upsert({
       weight_type: 'signal',
       dimension_value: signalType,
-      learned_score: learnedScore,
+      learned_score: finalScore,
       sample_count: pushedN,
       leads_pushed: pushedN,
       leads_replied: replied || 0,

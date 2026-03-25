@@ -13,7 +13,7 @@ import { getCampaignId } from '@/lib/enrichment/campaign-mapper';
 import { addLeadsToCampaign } from '@/lib/instantly';
 import type { PipelineLead } from '@/lib/gtm/types';
 import { addToWatchlist } from '@/lib/champions/watchlist';
-import { syncLeadToCrm } from '@/lib/crm/close-sync';
+import { syncLeadToCrm, logActivityToClose } from '@/lib/crm/close-sync';
 
 async function updateLead(id: string, updates: Partial<PipelineLead>) {
   await supabase
@@ -99,7 +99,38 @@ export async function processPipelineLead(lead: PipelineLead): Promise<void> {
       return;
     }
 
-    const pushResult = await addLeadsToCampaign(campaignId, [{
+    // A/B experiment routing — override campaign if active experiment exists
+    let finalCampaignId = campaignId;
+    try {
+      const { data: activeExp } = await supabase
+        .from('ab_experiments')
+        .select('id, base_campaign_id, variant_campaign_ids, total_leads')
+        .eq('signal_type', signal_type)
+        .eq('status', 'active')
+        .limit(1)
+        .single();
+
+      if (activeExp) {
+        const allCampaigns = [activeExp.base_campaign_id, ...(activeExp.variant_campaign_ids || [])];
+        const variantIndex = (activeExp.total_leads || 0) % allCampaigns.length;
+        finalCampaignId = allCampaigns[variantIndex];
+
+        // Record assignment + increment counter (fire-and-forget)
+        Promise.all([
+          supabase.from('ab_experiment_leads').upsert({
+            experiment_id: activeExp.id,
+            lead_email: emailResult.email,
+            variant_index: variantIndex,
+            campaign_id: finalCampaignId,
+          }, { onConflict: 'experiment_id,lead_email' }),
+          supabase.from('ab_experiments')
+            .update({ total_leads: (activeExp.total_leads || 0) + 1 })
+            .eq('id', activeExp.id),
+        ]).catch(console.error);
+      }
+    } catch {} // No active experiment — use default campaign
+
+    const pushResult = await addLeadsToCampaign(finalCampaignId, [{
       email: emailResult.email,
       first_name: contact.first_name,
       last_name: contact.last_name,
@@ -136,6 +167,14 @@ export async function processPipelineLead(lead: PipelineLead): Promise<void> {
       campaign_id: campaignId,
       email_found_via: emailResult.found_via,
     }).catch(console.error);
+
+    // Log email sent to Close activity timeline
+    logActivityToClose({
+      type: 'email_sent',
+      leadEmail: lead.email || '',
+      subject: `ColdCraft Outbound — ${lead.signal_type}`,
+      body: `Personalized opener: ${lead.personalized_opener || 'N/A'}`,
+    }).catch(() => {}); // fire-and-forget
 
     // Add to champion watchlist for job-change monitoring
     await addToWatchlist({

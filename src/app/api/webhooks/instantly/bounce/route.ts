@@ -72,6 +72,32 @@ export async function POST(req: NextRequest) {
 
     console.log(`Bounce recorded: ${leadEmail} → ${outcome}`);
 
+    // Cross-system blocklist: block in Instantly + update Close
+    // Note: `outcome` is the mapped value ('hard_bounce'), `bounceType` is raw ('hard')
+    if (outcome === 'hard_bounce' && leadEmail) {
+      // Block in Instantly
+      const { blockEmail } = await import('@/lib/instantly');
+      blockEmail(leadEmail).catch((err: unknown) =>
+        console.error('[bounce] Instantly block failed:', err)
+      );
+
+      // Update Close CRM — mark as Bad Fit + add note
+      const { findLeadByEmail, updateLead, addNoteToLead, getLeadStatuses } = await import('@/lib/crm/close-client');
+      const { logActivityToClose } = await import('@/lib/crm/close-sync');
+
+      (async () => {
+        const lead = await findLeadByEmail(leadEmail);
+        if (!lead) return;
+
+        const statuses = await getLeadStatuses();
+        const badFit = statuses.find((s) => s.label === 'Bad Fit');
+        if (badFit) await updateLead(lead.id, { status_id: badFit.id });
+
+        await addNoteToLead(lead.id, `[BOUNCE] Hard bounce — email blocked across Instantly and Close`);
+        await logActivityToClose({ type: 'bounce', leadEmail, note: `Hard bounce for ${leadEmail}` });
+      })().catch((err) => console.error('[bounce] Close sync failed:', err));
+    }
+
     return NextResponse.json({ success: true, email: leadEmail, outcome });
   } catch (err) {
     console.error('Bounce webhook error:', err);
