@@ -1,6 +1,8 @@
 import type { Metadata } from "next";
 import localFont from "next/font/local";
 import { JetBrains_Mono } from "next/font/google";
+import { Analytics } from "@vercel/analytics/next";
+import { SpeedInsights } from "@vercel/speed-insights/next";
 import "./globals.css";
 
 const instrumentSerif = localFont({
@@ -81,7 +83,11 @@ export default function RootLayout({
       lang="en"
       className={`${instrumentSerif.variable} ${satoshi.variable} ${jetbrainsMono.variable}`}
     >
-      <body className="font-body antialiased relative">{children}</body>
+      <body className="font-body antialiased relative">
+        {children}
+        <Analytics />
+        <SpeedInsights />
+      </body>
     </html>
   );
 }

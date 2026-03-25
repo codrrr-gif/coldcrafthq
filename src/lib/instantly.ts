@@ -6,9 +6,18 @@ import type { ThreadMessage } from './types';
 
 const API_BASE = 'https://api.instantly.ai/api/v2';
 
+// Round-robin across INSTANTLY_API_KEY and INSTANTLY_API_KEY_2 to
+// double throughput and reduce rate-limit risk across two workspaces.
+let _keyIndex = 0;
 function getApiKey(): string {
-  const key = process.env.INSTANTLY_API_KEY;
-  if (!key) throw new Error('INSTANTLY_API_KEY not set');
+  const keys = [
+    process.env.INSTANTLY_API_KEY,
+    process.env.INSTANTLY_API_KEY_2,
+  ].filter(Boolean) as string[];
+
+  if (!keys.length) throw new Error('INSTANTLY_API_KEY not set');
+  const key = keys[_keyIndex % keys.length];
+  _keyIndex++;
   return key;
 }
 

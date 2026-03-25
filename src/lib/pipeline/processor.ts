@@ -13,6 +13,7 @@ import { getCampaignId } from '@/lib/enrichment/campaign-mapper';
 import { addLeadsToCampaign } from '@/lib/instantly';
 import type { PipelineLead } from '@/lib/gtm/types';
 import { addToWatchlist } from '@/lib/champions/watchlist';
+import { syncLeadToCrm } from '@/lib/crm/close-sync';
 
 async function updateLead(id: string, updates: Partial<PipelineLead>) {
   await supabase
@@ -121,6 +122,20 @@ export async function processPipelineLead(lead: PipelineLead): Promise<void> {
       status: 'pushed',
       pushed_at: new Date().toISOString(),
     });
+
+    // Sync to Close CRM (fire-and-forget)
+    syncLeadToCrm({
+      email: emailResult.email,
+      first_name: contact.first_name,
+      last_name: contact.last_name,
+      title: contact.title,
+      company_name: company_name,
+      company_domain,
+      signal_type,
+      signal_summary,
+      campaign_id: campaignId,
+      email_found_via: emailResult.found_via,
+    }).catch(console.error);
 
     // Add to champion watchlist for job-change monitoring
     await addToWatchlist({

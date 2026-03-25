@@ -18,7 +18,7 @@ import { hasRecentSignal } from '@/lib/signals/deduplicator';
 
 export const dynamic = 'force-dynamic';
 
-export async function POST() {
+async function handler() {
   try {
     const { data: sources } = await supabase
       .from('signal_sources')
@@ -119,4 +119,12 @@ export async function POST() {
     console.error('Check error:', err);
     return NextResponse.json({ error: 'Check failed' }, { status: 500 });
   }
+}
+
+export async function GET() {
+  return handler();
+}
+
+export async function POST() {
+  return handler();
 }

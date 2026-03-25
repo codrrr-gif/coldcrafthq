@@ -1,8 +1,8 @@
 // src/app/api/pipeline/ingest/route.ts
 // ============================================
-// Called by daily cron (piggybacked on auto-send) or manually.
+// Cron: Signal ingestion — 8am ET, weekdays
 // Starts Apify actor runs for all enabled signal sources.
-// Returns run IDs immediately — processing happens when /check is polled.
+// Returns run IDs immediately — /check polls for completion.
 // ============================================
 
 import { NextRequest, NextResponse } from 'next/server';
@@ -11,7 +11,7 @@ import { runGoogleSearch, runLinkedInJobsSearch } from '@/lib/apify';
 
 export const dynamic = 'force-dynamic';
 
-export async function POST(req: NextRequest) {
+async function handler(req: NextRequest) {
   const cronSecret = process.env.CRON_SECRET || process.env.WEBHOOK_SECRET;
   if (cronSecret) {
     const authHeader = req.headers.get('authorization');
@@ -57,4 +57,12 @@ export async function POST(req: NextRequest) {
     console.error('Ingest error:', err);
     return NextResponse.json({ error: 'Ingest failed' }, { status: 500 });
   }
+}
+
+export async function GET(req: NextRequest) {
+  return handler(req);
+}
+
+export async function POST(req: NextRequest) {
+  return handler(req);
 }

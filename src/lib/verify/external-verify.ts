@@ -40,7 +40,7 @@ export interface ExternalVerifyResult {
 export async function verifyWithMillionVerifier(
   email: string
 ): Promise<ExternalVerifyResult | null> {
-  const apiKey = process.env.MILLION_VERIFIER_API_KEY;
+  const apiKey = process.env.MILLIONVERIFIER_API_KEY;
   if (!apiKey) return null;
 
   try {

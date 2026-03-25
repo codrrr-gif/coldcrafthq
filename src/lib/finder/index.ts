@@ -13,12 +13,71 @@ import { getCachedPattern, updateDomainPattern } from './patterns';
 import { verifyEmail } from '@/lib/verify/pipeline';
 import type { FinderResult } from '@/lib/gtm/types';
 
+// Step 0: FindyMail lookup — finds email by name + domain directly (when key is set)
+async function findEmailWithFindyMail(
+  firstName: string,
+  lastName: string,
+  domain: string,
+): Promise<string | null> {
+  const apiKey = process.env.FINDYMAIL_API_KEY;
+  if (!apiKey) return null;
+
+  try {
+    const res = await fetch('https://app.findymail.com/api/search', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${apiKey}`,
+      },
+      body: JSON.stringify({ name: `${firstName} ${lastName}`, domain }),
+      signal: AbortSignal.timeout(15000),
+    });
+
+    if (!res.ok) return null;
+
+    const data = await res.json();
+    // FindyMail returns { contact: { email, confidence, ... } } or { email, ... }
+    const email: string | undefined =
+      data?.contact?.email || data?.email || undefined;
+    const confidence: number =
+      data?.contact?.confidence ?? data?.confidence ?? 0;
+
+    if (email && confidence >= 70) return email.toLowerCase();
+  } catch {
+    // Network error or timeout — fall through to SMTP
+  }
+
+  return null;
+}
+
 export async function findEmail(
   firstName: string,
   lastName: string,
   domain: string,
 ): Promise<FinderResult> {
   const triedPatterns: string[] = [];
+
+  // Step 0: FindyMail lookup — highest accuracy, try before SMTP guessing
+  const findymailEmail = await findEmailWithFindyMail(firstName, lastName, domain);
+  if (findymailEmail) {
+    triedPatterns.push(findymailEmail);
+    const result = await verifyEmail(findymailEmail, {
+      use_million_verifier: false,
+      use_findymail: false,
+    });
+    if (result.verdict === 'valid' || result.verdict === 'risky') {
+      await updateDomainPattern(findymailEmail, firstName, lastName);
+      return {
+        email: findymailEmail,
+        found: true,
+        pattern: null,
+        found_via: 'external',
+        verdict: result.verdict,
+        score: result.score,
+        tried_patterns: triedPatterns,
+      };
+    }
+  }
 
   // Step 1: Check pattern cache — skip external APIs for speed
   const cached = await getCachedPattern(domain);

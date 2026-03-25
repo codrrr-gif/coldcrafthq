@@ -238,13 +238,13 @@ export async function verifyEmail(
 
   const useExternal =
     needsExternalVerify &&
-    (config?.use_million_verifier ?? !!process.env.MILLION_VERIFIER_API_KEY) ||
+    (config?.use_million_verifier ?? !!process.env.MILLIONVERIFIER_API_KEY) ||
     (config?.use_findymail ?? !!process.env.FINDYMAIL_API_KEY);
 
   if (useExternal && needsExternalVerify) {
     const extResult = await runExternalVerification(
       normalizedEmail,
-      config?.use_million_verifier ?? !!process.env.MILLION_VERIFIER_API_KEY,
+      config?.use_million_verifier ?? !!process.env.MILLIONVERIFIER_API_KEY,
       config?.use_findymail ?? !!process.env.FINDYMAIL_API_KEY,
     );
 

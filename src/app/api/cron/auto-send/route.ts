@@ -1,10 +1,13 @@
 // ============================================
-// Cron: Daily Engine — Auto-Send + Self-Improve
+// Cron: Daily Engine — 10am ET, weekdays
 // ============================================
-// Runs daily (Vercel hobby plan). Handles:
 // 1. Auto-send stale pending replies
 // 2. Score silent outcomes (3-day window)
 // 3. Auto-tune confidence thresholds
+// 4. Run multi-channel sequences (LinkedIn, voice)
+// 5. Trigger self-learning optimization (fire-and-forget)
+//
+// Pipeline ingest runs on its own dedicated cron (8am ET).
 
 import { NextRequest, NextResponse } from 'next/server';
 import { processTimeoutAutoSends } from '@/lib/ai/auto-send';
@@ -12,6 +15,7 @@ import { evaluateSilentOutcomes, tuneThresholds } from '@/lib/ai/outcomes';
 import { runDailySequence } from '@/lib/orchestrator/sequence-runner';
 
 export const dynamic = 'force-dynamic';
+export const maxDuration = 300;
 
 export async function GET(req: NextRequest) {
   const cronSecret = process.env.CRON_SECRET || process.env.WEBHOOK_SECRET;
@@ -32,21 +36,12 @@ export async function GET(req: NextRequest) {
     }),
   ]);
 
-  const ingestSecret = process.env.CRON_SECRET || process.env.WEBHOOK_SECRET;
   const appUrl = process.env.NEXT_PUBLIC_APP_URL || 'https://coldcrafthq.com';
 
   // Trigger learning optimization (fire-and-forget — non-blocking)
   fetch(`${appUrl}/api/learning/optimize`, {
     method: 'POST',
-    headers: ingestSecret ? { Authorization: `Bearer ${ingestSecret}` } : {},
-  }).catch(console.error);
-
-  // Trigger pipeline ingest (fire-and-forget — non-blocking)
-  // On Hobby plan: piggybacks on this daily cron.
-  // On Pro: add a dedicated /api/pipeline/ingest cron instead.
-  fetch(`${appUrl}/api/pipeline/ingest`, {
-    method: 'POST',
-    headers: ingestSecret ? { Authorization: `Bearer ${ingestSecret}` } : {},
+    headers: cronSecret ? { Authorization: `Bearer ${cronSecret}` } : {},
   }).catch(console.error);
 
   return NextResponse.json({

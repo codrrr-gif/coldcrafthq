@@ -30,6 +30,7 @@ import {
   notifyReviewNeeded,
   notifyLegalThreat,
 } from '@/lib/slack';
+import { markInterestedInCrm } from '@/lib/crm/close-sync';
 import type { ThreadMessage } from '@/lib/types';
 import type { SubCategory } from '@/lib/ai/playbooks';
 
@@ -252,6 +253,16 @@ export async function POST(req: NextRequest) {
           status = 'sent';
         }
       }
+    }
+
+    // Sync interested reply to Close CRM (fire-and-forget)
+    if (category === 'interested') {
+      markInterestedInCrm({
+        email: lead_email,
+        company: leadCompany,
+        lead_name: leadName,
+        reply_summary: categorization.summary,
+      }).catch(console.error);
     }
 
     // Step 6: Slack notifications

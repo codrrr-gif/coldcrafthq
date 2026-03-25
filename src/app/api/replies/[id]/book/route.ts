@@ -6,16 +6,17 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { supabase } from '@/lib/supabase/client';
 import { scoreReplyOutcome } from '@/lib/ai/outcomes';
+import { createOpportunityInCrm } from '@/lib/crm/close-sync';
 
 export async function POST(
   req: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
-  const { id } = params;
+  const { id } = await params;
 
   const { data: reply, error } = await supabase
     .from('replies')
-    .select('id, status, lead_email, lead_name')
+    .select('id, status, lead_email, lead_name, lead_company')
     .eq('id', id)
     .single();
 
@@ -28,6 +29,13 @@ export async function POST(
   }
 
   await scoreReplyOutcome(id, '', 'meeting_booked', 'Manually marked as meeting booked');
+
+  // Create opportunity in Close CRM (fire-and-forget)
+  createOpportunityInCrm({
+    email: reply.lead_email,
+    company: reply.lead_company,
+    lead_name: reply.lead_name,
+  }).catch(console.error);
 
   return NextResponse.json({ success: true, outcome: 'meeting_booked' });
 }

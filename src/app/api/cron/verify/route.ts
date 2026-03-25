@@ -1,15 +1,14 @@
 // ============================================
-// Cron: Bulk Verification Processor
+// Cron: Bulk Verification Processor — every 6 hours
 // ============================================
-// Runs every minute to process pending verification jobs.
-// Each invocation processes up to 10 emails to stay within
-// Vercel's 60-second function timeout.
+// Processes the pending email verification queue.
+// On Pro: extended timeout allows larger batch per run.
 
 import { NextRequest, NextResponse } from 'next/server';
 import { processVerificationJobs } from '@/lib/verify/bulk-processor';
 
 export const dynamic = 'force-dynamic';
-export const maxDuration = 60;
+export const maxDuration = 300;
 
 export async function GET(req: NextRequest) {
   const cronSecret = process.env.CRON_SECRET || process.env.WEBHOOK_SECRET;
