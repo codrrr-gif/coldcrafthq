@@ -5,6 +5,7 @@
 
 import { supabase } from '@/lib/supabase/client';
 import { initiateCall } from './vapi-client';
+import { isLeadSuppressed } from '@/lib/orchestrator/lead-suppression';
 
 /**
  * @param voiceDelayDays - Days after push to schedule calls. Defaults to 5 for backward compat.
@@ -22,8 +23,8 @@ export async function scheduleFollowUpCalls(voiceDelayDays = 5): Promise<number>
     .from('pipeline_leads')
     .select('*')
     .eq('status', 'pushed')
-    .lt('pushed_at', windowEnd)
-    .gte('pushed_at', windowStart)
+    .gte('pushed_at', windowEnd)
+    .lt('pushed_at', windowStart)
     .not('first_name', 'is', null)
     .limit(10);
 
@@ -39,6 +40,7 @@ export async function scheduleFollowUpCalls(voiceDelayDays = 5): Promise<number>
       .eq('channel', 'voice');
 
     if ((count || 0) > 0) continue;
+    if (await isLeadSuppressed(lead.id)) continue;
 
     // Phone number must be in research_data
     const phoneNumber = (lead.research_data as Record<string, unknown> | null)?.phone_number as string | undefined;

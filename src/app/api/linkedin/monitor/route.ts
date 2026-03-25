@@ -4,11 +4,15 @@
 
 import { NextRequest, NextResponse } from 'next/server';
 import { monitorProspectPosts } from '@/lib/linkedin/social-monitor';
+import { requireSecret } from '@/lib/auth/api-auth';
 
 export const dynamic = 'force-dynamic';
 export const maxDuration = 300;
 
 export async function POST(req: NextRequest) {
+  const authErr = requireSecret(req);
+  if (authErr) return authErr;
+
   const { linkedin_urls } = await req.json() as { linkedin_urls: string[] };
 
   if (!Array.isArray(linkedin_urls) || !linkedin_urls.length) {

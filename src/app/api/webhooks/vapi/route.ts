@@ -3,10 +3,15 @@
 
 import { NextRequest, NextResponse } from 'next/server';
 import { supabase } from '@/lib/supabase/client';
+import { requireVapiSecret } from '@/lib/auth/api-auth';
 
 export const dynamic = 'force-dynamic';
 
 export async function POST(req: NextRequest) {
+  // Auth is mandatory — reject if secret not configured
+  const authErr = requireVapiSecret(req);
+  if (authErr) return authErr;
+
   const body = await req.json() as { message?: { type?: string; call?: { id?: string }; transcript?: string; durationSeconds?: number } };
   const { message } = body;
 
@@ -48,6 +53,22 @@ export async function POST(req: NextRequest) {
     status: 'delivered',
     replied_at: outcome === 'interested' ? new Date().toISOString() : null,
   }).eq('external_id', callId);
+
+  // Suppress lead from further outreach if not interested
+  if (outcome === 'not_interested' || outcome === 'do_not_call') {
+    const { data: voiceCall } = await supabase
+      .from('voice_calls')
+      .select('lead_id')
+      .eq('vapi_call_id', callId)
+      .single();
+
+    if (voiceCall?.lead_id) {
+      await supabase
+        .from('pipeline_leads')
+        .update({ status: 'opted_out', updated_at: new Date().toISOString() })
+        .eq('id', voiceCall.lead_id);
+    }
+  }
 
   return NextResponse.json({ ok: true });
 }

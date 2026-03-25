@@ -232,7 +232,7 @@ Return a JSON object with:
 Return ONLY valid JSON.`,
       },
     ],
-  });
+  }, { timeout: 20000 });
 
   const text = response.content[0].type === 'text' ? response.content[0].text : '';
   const cleaned = text.replace(/```json\n?/g, '').replace(/```\n?/g, '').trim();

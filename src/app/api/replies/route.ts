@@ -4,17 +4,11 @@
 
 import { NextRequest, NextResponse } from 'next/server';
 import { supabase } from '@/lib/supabase/client';
-import { processTimeoutAutoSends } from '@/lib/ai/auto-send';
 import type { DashboardStats } from '@/lib/types';
 
 export const dynamic = 'force-dynamic';
 
 export async function GET(req: NextRequest) {
-  // Trigger auto-send check on every dashboard load (non-blocking)
-  if (process.env.SUPABASE_URL) {
-    processTimeoutAutoSends().catch(console.error);
-  }
-
   const { searchParams } = new URL(req.url);
   const status = searchParams.get('status');
   const category = searchParams.get('category');

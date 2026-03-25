@@ -220,6 +220,6 @@ export const DEFAULT_PIPELINE_CONFIG: PipelineConfig = {
   timeout_ms: 30000,
   batch_size: 10,
   concurrency: 5,
-  use_million_verifier: !!process.env.MILLION_VERIFIER_API_KEY,
+  use_million_verifier: !!process.env.MILLIONVERIFIER_API_KEY,
   use_findymail: !!process.env.FINDYMAIL_API_KEY,
 };

@@ -5,11 +5,15 @@
 import { NextRequest, NextResponse } from 'next/server';
 import Papa from 'papaparse';
 import { findEmail } from '@/lib/finder';
+import { requireSecret } from '@/lib/auth/api-auth';
 
 export const dynamic = 'force-dynamic';
 export const maxDuration = 300;
 
 export async function POST(req: NextRequest) {
+  const authErr = requireSecret(req);
+  if (authErr) return authErr;
+
   try {
     const formData = await req.formData();
     const file = formData.get('file') as File | null;

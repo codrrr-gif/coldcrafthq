@@ -19,6 +19,12 @@ export type PipelineStatus =
   | 'ready'
   | 'pushed'
   | 'failed'
+  | 'research_failed'
+  | 'opted_out'
+  | 'meeting'
+  | 'contacted'
+  | 'replied'
+  | 'won'
   | 'filtered';
 
 export type EmailFoundVia = 'pattern_cache' | 'smtp_permutation' | 'external' | 'findymail_catchall';

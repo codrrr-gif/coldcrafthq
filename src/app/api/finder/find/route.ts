@@ -1,10 +1,14 @@
 // src/app/api/finder/find/route.ts
 import { NextRequest, NextResponse } from 'next/server';
 import { findEmail } from '@/lib/finder';
+import { requireSecret } from '@/lib/auth/api-auth';
 
 export const dynamic = 'force-dynamic';
 
 export async function POST(req: NextRequest) {
+  const authErr = requireSecret(req);
+  if (authErr) return authErr;
+
   try {
     const { first_name, last_name, domain } = await req.json();
 

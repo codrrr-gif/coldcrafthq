@@ -102,6 +102,18 @@ export async function processPipelineLead(lead: PipelineLead): Promise<void> {
       signalSummary: signal_summary || '',
     });
 
+    // Quality gate: reject empty/garbage research before pushing
+    if (!research?.personalized_opener || research.personalized_opener.length < 20) {
+      console.warn(`[processor] Research quality gate failed for ${id}: empty or short opener`);
+      await updateLead(id, { status: 'research_failed', failure_reason: 'low_quality_research' });
+      return;
+    }
+    if (!research?.research_summary || research.research_summary.length < 30) {
+      console.warn(`[processor] Research quality gate failed for ${id}: empty research summary`);
+      await updateLead(id, { status: 'research_failed', failure_reason: 'low_quality_research' });
+      return;
+    }
+
     await updateLead(id, {
       research_summary: research.research_summary,
       pain_points: research.pain_signals,
@@ -133,8 +145,8 @@ export async function processPipelineLead(lead: PipelineLead): Promise<void> {
         const variantIndex = (activeExp.total_leads || 0) % allCampaigns.length;
         finalCampaignId = allCampaigns[variantIndex];
 
-        // Record assignment + increment counter (fire-and-forget)
-        Promise.all([
+        // Record assignment + increment counter
+        await Promise.all([
           supabase.from('ab_experiment_leads').upsert({
             experiment_id: activeExp.id,
             lead_email: emailResult.email,
@@ -167,7 +179,7 @@ export async function processPipelineLead(lead: PipelineLead): Promise<void> {
     }
 
     await updateLead(id, {
-      instantly_campaign_id: campaignId,
+      instantly_campaign_id: finalCampaignId,
       status: 'pushed',
       pushed_at: new Date().toISOString(),
     });
@@ -182,7 +194,7 @@ export async function processPipelineLead(lead: PipelineLead): Promise<void> {
       company_domain,
       signal_type,
       signal_summary,
-      campaign_id: campaignId,
+      campaign_id: finalCampaignId,
       email_found_via: emailResult.found_via,
     }).catch(console.error);
 

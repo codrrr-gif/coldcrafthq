@@ -31,6 +31,7 @@ import {
   notifyLegalThreat,
 } from '@/lib/slack';
 import { markInterestedInCrm, logActivityToClose } from '@/lib/crm/close-sync';
+import { requireSecret } from '@/lib/auth/api-auth';
 import type { ThreadMessage } from '@/lib/types';
 import type { SubCategory } from '@/lib/ai/playbooks';
 
@@ -38,14 +39,9 @@ export async function POST(req: NextRequest) {
   const startTime = Date.now();
 
   try {
-    // Validate webhook secret
-    const webhookSecret = process.env.WEBHOOK_SECRET;
-    if (webhookSecret) {
-      const authHeader = req.headers.get('authorization');
-      if (authHeader !== `Bearer ${webhookSecret}`) {
-        return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-      }
-    }
+    // Auth is mandatory — reject if secret not configured
+    const authErr = requireSecret(req);
+    if (authErr) return authErr;
 
     const payload = await req.json();
     const {
@@ -62,6 +58,23 @@ export async function POST(req: NextRequest) {
         { error: 'Missing required fields: lead_email, reply_text' },
         { status: 400 }
       );
+    }
+
+    // Idempotency check — skip duplicate webhooks
+    // NOTE: Requires ALTER TABLE replies ADD COLUMN message_hash TEXT;
+    // CREATE INDEX idx_replies_message_hash ON replies(message_hash);
+    const crypto = await import('crypto');
+    const messageHash = crypto.createHash('sha256').update(`${lead_email}:${reply_text}`).digest('hex');
+    const fiveMinutesAgo = new Date(Date.now() - 5 * 60 * 1000).toISOString();
+    const { data: existingReply } = await supabase
+      .from('replies')
+      .select('id')
+      .eq('message_hash', messageHash)
+      .gte('created_at', fiveMinutesAgo)
+      .limit(1);
+
+    if (existingReply?.length) {
+      return NextResponse.json({ success: true, id: existingReply[0].id, deduplicated: true });
     }
 
     // Record reply as a valid signal — non-blocking, best data point we can get
@@ -216,6 +229,7 @@ export async function POST(req: NextRequest) {
         auto_sent: false,
         auto_send_reason: null,
         parent_reply_id: parentReplyId,
+        message_hash: messageHash,
       })
       .select('id')
       .single();

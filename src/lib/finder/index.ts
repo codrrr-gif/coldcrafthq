@@ -60,8 +60,8 @@ export async function findEmail(
 
   // Step 0: FindyMail lookup — highest accuracy, try before SMTP guessing
   const findymailEmail = await findEmailWithFindyMail(firstName, lastName, domain);
-  findymailAttempted = true;
   if (findymailEmail) {
+    findymailAttempted = true;
     triedPatterns.push(findymailEmail);
     const result = await verifyEmail(findymailEmail, {
       use_million_verifier: false,

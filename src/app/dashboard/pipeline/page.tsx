@@ -12,6 +12,12 @@ const STATUS_CONFIG: Record<PipelineStatus, { label: string; color: string; dot:
   ready:            { label: 'Ready',            color: 'text-cyan-400',       dot: 'bg-cyan-400' },
   pushed:           { label: 'Pushed',           color: 'text-green-400',      dot: 'bg-green-400' },
   failed:           { label: 'Failed',           color: 'text-red-400',        dot: 'bg-red-400' },
+  research_failed:  { label: 'Research failed',  color: 'text-red-400',        dot: 'bg-red-400' },
+  opted_out:        { label: 'Opted out',        color: 'text-text-tertiary',  dot: 'bg-text-tertiary/50' },
+  meeting:          { label: 'Meeting',          color: 'text-emerald-400',    dot: 'bg-emerald-400' },
+  contacted:        { label: 'Contacted',        color: 'text-blue-400',       dot: 'bg-blue-400' },
+  replied:          { label: 'Replied',          color: 'text-cyan-400',       dot: 'bg-cyan-400' },
+  won:              { label: 'Won',              color: 'text-emerald-400',    dot: 'bg-emerald-400' },
   filtered:         { label: 'Filtered',         color: 'text-text-tertiary',  dot: 'bg-text-tertiary/50' },
 };
 

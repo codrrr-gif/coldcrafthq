@@ -17,7 +17,11 @@ import { supabase } from '@/lib/supabase/client';
 
 function verifySignature(body: string, signature: string | null): boolean {
   const secret = process.env.CALENDLY_SIGNING_SECRET;
-  if (!secret || !signature) return !secret; // if no secret, allow through
+  if (!secret) {
+    console.error('[auth] No CALENDLY_SIGNING_SECRET configured');
+    return false; // reject if secret not configured
+  }
+  if (!signature) return false;
 
   try {
     const expected = createHmac('sha256', secret)
@@ -84,7 +88,7 @@ export async function POST(req: NextRequest) {
     if (pipelineLead) {
       await supabase
         .from('pipeline_leads')
-        .update({ status: 'pushed', updated_at: new Date().toISOString() })
+        .update({ status: 'meeting', updated_at: new Date().toISOString() })
         .eq('id', pipelineLead.id);
     }
 

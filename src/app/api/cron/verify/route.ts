@@ -6,18 +6,15 @@
 
 import { NextRequest, NextResponse } from 'next/server';
 import { processVerificationJobs } from '@/lib/verify/bulk-processor';
+import { requireSecret } from '@/lib/auth/api-auth';
 
 export const dynamic = 'force-dynamic';
 export const maxDuration = 300;
 
 export async function GET(req: NextRequest) {
-  const cronSecret = process.env.CRON_SECRET || process.env.WEBHOOK_SECRET;
-  if (cronSecret) {
-    const authHeader = req.headers.get('authorization');
-    if (authHeader !== `Bearer ${cronSecret}`) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-    }
-  }
+  // Auth is mandatory — reject if secret not configured
+  const authErr = requireSecret(req);
+  if (authErr) return authErr;
 
   const result = await processVerificationJobs();
 

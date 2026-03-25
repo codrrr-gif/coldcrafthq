@@ -56,8 +56,8 @@ export async function pullCampaignMetrics(): Promise<number> {
     const analytics = await fetchCampaignAnalytics(campaign.id);
     if (!analytics || analytics.emails_sent === 0) continue;
 
-    // Score based on reply_rate: multiply by 1000 and clamp 10-200
-    const learnedScore = Math.max(10, Math.min(200, Math.round(analytics.reply_rate * 1000)));
+    // Align with signal optimizer scale (SCALE_FACTOR = 1500)
+    const learnedScore = Math.max(10, Math.min(200, Math.round(analytics.reply_rate * 1500)));
 
     const { error } = await supabase.from('learning_weights').upsert(
       {

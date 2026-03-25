@@ -11,10 +11,14 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { supabase } from '@/lib/supabase/client';
 import { addLeadsToCampaign } from '@/lib/instantly';
+import { requireSecret } from '@/lib/auth/api-auth';
 
 export const dynamic = 'force-dynamic';
 
 export async function POST(req: NextRequest) {
+  const authErr = requireSecret(req);
+  if (authErr) return authErr;
+
   try {
     const { job_id, campaign_id, include_risky = false } = await req.json();
 

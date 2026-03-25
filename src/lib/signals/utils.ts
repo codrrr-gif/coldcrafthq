@@ -12,6 +12,11 @@ export function extractDomainFromText(text: string): string | null {
     'techcrunch.com', 'crunchbase.com', 'linkedin.com', 'twitter.com',
     'forbes.com', 'businesswire.com', 'prnewswire.com', 'google.com',
     'bloomberg.com', 'reuters.com', 'wsj.com', 'ft.com', 'x.com',
+    'youtube.com', 'medium.com', 'github.com', 'facebook.com', 'instagram.com',
+    'reddit.com', 'yahoo.com', 'nytimes.com', 'producthunt.com', 'g2.com',
+    'capterra.com', 'glassdoor.com', 'indeed.com', 'bit.ly', 't.co', 'ow.ly',
+    'tinyurl.com', 'buff.ly', 'wp.com', 'wordpress.com', 'blogspot.com',
+    'substack.com', 'pitchbook.com',
   ];
 
   for (const match of matches) {

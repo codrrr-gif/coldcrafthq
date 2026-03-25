@@ -1,12 +1,29 @@
 // src/lib/signals/domain-resolver.ts
 // Resolves a company domain from its name using Perplexity search.
 // Used to recover G2/Capterra signals that arrive without a domain.
+// NOTE: Requires CREATE TABLE domain_cache (company_name TEXT PRIMARY KEY, domain TEXT NOT NULL, resolved_at TIMESTAMPTZ DEFAULT NOW());
+
+import { supabase } from '@/lib/supabase/client';
+import { perplexityLimiter } from '@/lib/rate-limiter';
 
 export async function resolveDomain(companyName: string): Promise<string | null> {
   const apiKey = process.env.PERPLEXITY_API_KEY;
   if (!apiKey) return null;
 
+  // Check cache first
+  const { data: cached } = await supabase
+    .from('domain_cache')
+    .select('domain')
+    .eq('company_name', companyName.toLowerCase().trim())
+    .single();
+
+  if (cached?.domain) {
+    return cached.domain;
+  }
+
   try {
+    await perplexityLimiter.acquire();
+
     const res = await fetch('https://api.perplexity.ai/chat/completions', {
       method: 'POST',
       headers: {
@@ -42,6 +59,18 @@ export async function resolveDomain(companyName: string): Promise<string | null>
 
     // Basic sanity check — must look like a domain
     if (!domain || !domain.includes('.')) return null;
+
+    // Cache the resolved domain
+    if (domain) {
+      await supabase
+        .from('domain_cache')
+        .upsert({
+          company_name: companyName.toLowerCase().trim(),
+          domain,
+          resolved_at: new Date().toISOString(),
+        }, { onConflict: 'company_name' })
+        .then(null, (err) => console.error('[domain-resolver] Cache write failed:', err));
+    }
 
     return domain;
   } catch {

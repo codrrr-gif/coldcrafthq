@@ -112,7 +112,7 @@ Respond in this exact JSON format:
 Return ONLY valid JSON, no other text.`,
       },
     ],
-  });
+  }, { timeout: 20000 });
 
   const text = response.content[0].type === 'text' ? response.content[0].text : '';
   const cleaned = text.replace(/```json\n?/g, '').replace(/```\n?/g, '').trim();

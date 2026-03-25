@@ -288,10 +288,10 @@ export async function tuneThresholds(): Promise<{ adjusted: number }> {
     let reason = '';
 
     if (winRate >= 0.85 && scored.length >= 20) {
-      newThreshold = Math.max(0.75, currentThreshold - 0.03);
+      newThreshold = Math.max(0.85, currentThreshold - 0.03);
       reason = `Win rate ${(winRate * 100).toFixed(0)}% with ${scored.length} samples — high performance, relaxing threshold`;
     } else if (winRate >= 0.70) {
-      newThreshold = Math.max(0.78, currentThreshold - 0.02);
+      newThreshold = Math.max(0.85, currentThreshold - 0.02);
       reason = `Win rate ${(winRate * 100).toFixed(0)}% — good performance, slightly relaxing threshold`;
     } else if (winRate < 0.40) {
       newThreshold = Math.min(0.98, currentThreshold + 0.03);

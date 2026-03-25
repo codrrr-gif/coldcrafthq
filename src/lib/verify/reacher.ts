@@ -12,7 +12,7 @@ const VERIFY_FROM_EMAIL = 'verify@coldcrafthq.com';
 const HELLO_NAME = 'mail.coldcrafthq.com';
 
 function getReacherUrl(): string | null {
-  return process.env.REACHER_URL || null;
+  return process.env.REACHER_API_URL || process.env.REACHER_URL || null;
 }
 
 export async function verifySmtp(email: string): Promise<{
@@ -56,7 +56,10 @@ export async function verifySmtp(email: string): Promise<{
   try {
     const response = await fetch(`${reacherUrl}/v0/check_email`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: {
+        'Content-Type': 'application/json',
+        ...(process.env.REACHER_API_KEY && { 'Authorization': `Bearer ${process.env.REACHER_API_KEY}` }),
+      },
       body: JSON.stringify(body),
       signal: controller.signal,
     });

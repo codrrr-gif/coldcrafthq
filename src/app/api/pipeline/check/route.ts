@@ -5,8 +5,9 @@
 // creates pipeline_leads rows from qualifying signals.
 // ============================================
 
-import { NextResponse } from 'next/server';
+import { NextRequest, NextResponse } from 'next/server';
 import { supabase } from '@/lib/supabase/client';
+import { requireSecret } from '@/lib/auth/api-auth';
 import { getRunStatus, getDatasetItems } from '@/lib/apify';
 import type { ParsedSignal } from '@/lib/gtm/types';
 import { parseFundingSignals } from '@/lib/signals/funding';
@@ -19,6 +20,7 @@ import { filterSignalByIcp } from '@/lib/signals/icp-filter';
 import { scoreSignal, MIN_SIGNAL_SCORE } from '@/lib/signals/scorer';
 import { hasRecentSignal } from '@/lib/signals/deduplicator';
 import { resolveDomain } from '@/lib/signals/domain-resolver';
+import { checkPipelineHealth } from '@/lib/pipeline/health-check';
 
 export const dynamic = 'force-dynamic';
 
@@ -61,6 +63,8 @@ async function handler() {
       else if (source.name === 'twitter_signals') parsed = parseTwitterSignals(items);
       else if (source.name === 'crunchbase_activity') parsed = parseCrunchbaseActivitySignals(items);
 
+      let sourceIngested = 0;
+
       for (const sig of parsed) {
         // Attempt domain resolution for signals missing a domain (e.g. G2/Capterra)
         const signal = { ...sig };
@@ -86,7 +90,7 @@ async function handler() {
           if (recent) continue;
         }
 
-        const score = scoreSignal(signal.signal_type, signal.signal_date, signal.headline);
+        const score = await scoreSignal(signal.signal_type, signal.signal_date, signal.headline);
         if (score < MIN_SIGNAL_SCORE) continue;
 
         const { data: rawSignal, error } = await supabase
@@ -118,11 +122,18 @@ async function handler() {
           status: 'pending',
         });
 
+        sourceIngested++;
         totalIngested++;
       }
 
-      await supabase.from('signal_sources').update({ last_run_id: null }).eq('id', source.id);
+      await supabase.from('signal_sources').update({
+        last_run_id: null,
+        last_signal_count: sourceIngested
+      }).eq('id', source.id);
     }
+
+    // Run health check after all processing
+    await checkPipelineHealth(totalIngested).catch(console.error);
 
     return NextResponse.json({
       status: allDone ? 'complete' : 'running',
@@ -134,10 +145,14 @@ async function handler() {
   }
 }
 
-export async function GET() {
+export async function GET(req: NextRequest) {
+  const authErr = requireSecret(req);
+  if (authErr) return authErr;
   return handler();
 }
 
-export async function POST() {
+export async function POST(req: NextRequest) {
+  const authErr = requireSecret(req);
+  if (authErr) return authErr;
   return handler();
 }

@@ -30,13 +30,14 @@ export async function recalculateHeatScores(): Promise<number> {
     const last7dCutoff = now - 7 * 24 * 60 * 60 * 1000;
     const last30dCutoff = now - 30 * 24 * 60 * 60 * 1000;
 
-    const signals7d = signals.filter((s) => new Date(s.created_at).getTime() > last7dCutoff);
-    const signals30d = signals.filter((s) => new Date(s.created_at).getTime() > last30dCutoff);
+    const signals7d = signals.filter((s) => new Date(s.signal_date || s.created_at).getTime() > last7dCutoff);
+    const signals30d = signals.filter((s) => new Date(s.signal_date || s.created_at).getTime() > last30dCutoff);
 
     // Compound score with recency decay
     const score = Math.min(
       signals.reduce((sum, s) => {
-        const ageDays = (now - new Date(s.created_at).getTime()) / (1000 * 60 * 60 * 24);
+        const signalTime = new Date(s.signal_date || s.created_at).getTime();
+        const ageDays = (now - signalTime) / (1000 * 60 * 60 * 24);
         const decay = ageDays <= 7 ? 1.0 : ageDays <= 30 ? 0.7 : 0.4;
         return sum + (s.score || 50) * decay;
       }, 0),
@@ -44,7 +45,7 @@ export async function recalculateHeatScores(): Promise<number> {
     );
 
     const sortedByDate = [...signals].sort(
-      (a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime(),
+      (a, b) => new Date(b.signal_date || b.created_at).getTime() - new Date(a.signal_date || a.created_at).getTime(),
     );
     const latest = sortedByDate[0];
 

@@ -6,10 +6,14 @@
 
 import { NextRequest, NextResponse } from 'next/server';
 import { verifyEmail } from '@/lib/verify/pipeline';
+import { requireSecret } from '@/lib/auth/api-auth';
 
 export const dynamic = 'force-dynamic';
 
 export async function POST(req: NextRequest) {
+  const authErr = requireSecret(req);
+  if (authErr) return authErr;
+
   try {
     const { email, skip_smtp } = await req.json();
 

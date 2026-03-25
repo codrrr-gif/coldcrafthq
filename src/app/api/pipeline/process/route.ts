@@ -2,15 +2,34 @@
 // Client-driven: processes one pending lead per call.
 // Dashboard polls this every 10s while leads are in queue.
 
-import { NextResponse } from 'next/server';
+import { NextRequest, NextResponse } from 'next/server';
 import { supabase } from '@/lib/supabase/client';
 import { processPipelineLead } from '@/lib/pipeline/processor';
+import { cleanupStalePipelineLeads } from '@/lib/pipeline/lead-cleanup';
+import { requireSecret } from '@/lib/auth/api-auth';
+import { checkDailyLimits } from '@/lib/pipeline/circuit-breaker';
 
 export const dynamic = 'force-dynamic';
 export const maxDuration = 300;
 
-export async function POST() {
+export async function POST(req: NextRequest) {
+  const authErr = requireSecret(req);
+  if (authErr) return authErr;
+
   try {
+    // Check daily limits before processing
+    const limits = await checkDailyLimits();
+    if (!limits.allowed) {
+      console.warn(`[process] Circuit breaker tripped: ${limits.reason}`);
+      return NextResponse.json({ status: 'rate_limited', reason: limits.reason }, { status: 429 });
+    }
+
+    // Clean up leads stuck in intermediate states before processing new ones
+    const cleanup = await cleanupStalePipelineLeads();
+    if (cleanup.reset > 0 || cleanup.failed > 0) {
+      console.log(`[process] Lead cleanup: ${cleanup.reset} reset, ${cleanup.failed} permanently failed`);
+    }
+
     const { data: lead } = await supabase
       .from('pipeline_leads')
       .select('*')

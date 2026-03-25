@@ -2,11 +2,15 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { discoverFromCrunchbase, discoverFromLinkedIn, upsertCompanies } from '@/lib/tam/company-discovery';
 import { supabase } from '@/lib/supabase/client';
+import { requireSecret } from '@/lib/auth/api-auth';
 
 export const dynamic = 'force-dynamic';
 export const maxDuration = 300;
 
-export async function GET() {
+export async function GET(req: NextRequest) {
+  const authErr = requireSecret(req);
+  if (authErr) return authErr;
+
   const { data, error } = await supabase
     .from('companies')
     .select('id,domain,name,industry,headcount_range,funding_stage,location,tier,tam_score,status,last_signal_at,source,created_at')
@@ -18,12 +22,9 @@ export async function GET() {
 }
 
 export async function POST(req: NextRequest) {
-  const cronSecret = process.env.CRON_SECRET || process.env.WEBHOOK_SECRET;
-  if (cronSecret) {
-    if (req.headers.get('authorization') !== `Bearer ${cronSecret}`) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-    }
-  }
+  // Auth is mandatory — reject if secret not configured
+  const authErr = requireSecret(req);
+  if (authErr) return authErr;
 
   const keywords = (
     process.env.ICP_DISCOVERY_KEYWORDS ||

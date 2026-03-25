@@ -19,19 +19,15 @@
 
 import { NextRequest, NextResponse } from 'next/server';
 import { recordEmailOutcome } from '@/lib/verify/outcomes-db';
+import { requireSecret } from '@/lib/auth/api-auth';
 
 export const dynamic = 'force-dynamic';
 
 export async function POST(req: NextRequest) {
   try {
-    // Validate webhook secret
-    const webhookSecret = process.env.WEBHOOK_SECRET;
-    if (webhookSecret) {
-      const authHeader = req.headers.get('authorization');
-      if (authHeader !== `Bearer ${webhookSecret}`) {
-        return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-      }
-    }
+    // Auth is mandatory — reject if secret not configured
+    const authErr = requireSecret(req);
+    if (authErr) return authErr;
 
     const payload = await req.json();
 

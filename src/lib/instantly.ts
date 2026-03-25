@@ -6,25 +6,24 @@ import type { ThreadMessage } from './types';
 
 const API_BASE = 'https://api.instantly.ai/api/v2';
 
-// Round-robin across INSTANTLY_API_KEY and INSTANTLY_API_KEY_2 to
+// Distribute across INSTANTLY_API_KEY and INSTANTLY_API_KEY_2 to
 // double throughput and reduce rate-limit risk across two workspaces.
-let _keyIndex = 0;
-function getApiKey(): string {
-  const keys = [
-    process.env.INSTANTLY_API_KEY,
-    process.env.INSTANTLY_API_KEY_2,
-  ].filter(Boolean) as string[];
-
+// Uses hash-based selection instead of module-level counter (resets in serverless).
+function getApiKey(seed?: string): string {
+  const keys = [process.env.INSTANTLY_API_KEY, process.env.INSTANTLY_API_KEY_2].filter(Boolean) as string[];
   if (!keys.length) throw new Error('INSTANTLY_API_KEY not set');
-  const key = keys[_keyIndex % keys.length];
-  _keyIndex++;
-  return key;
+  if (keys.length === 1) return keys[0];
+  // Use seed hash for deterministic distribution, random fallback
+  const idx = seed
+    ? Math.abs(seed.split('').reduce((a, c) => a + c.charCodeAt(0), 0)) % keys.length
+    : Math.floor(Math.random() * keys.length);
+  return keys[idx];
 }
 
-function headers() {
+function headers(seed?: string) {
   return {
     'Content-Type': 'application/json',
-    'Authorization': `Bearer ${getApiKey()}`,
+    'Authorization': `Bearer ${getApiKey(seed)}`,
   };
 }
 
@@ -32,7 +31,7 @@ function headers() {
 export async function getThread(campaignId: string, leadEmail: string): Promise<ThreadMessage[]> {
   const res = await fetch(
     `${API_BASE}/emails?campaign_id=${campaignId}&email=${encodeURIComponent(leadEmail)}&limit=50`,
-    { headers: headers() }
+    { headers: headers(leadEmail), signal: AbortSignal.timeout(15000) }
   );
 
   if (!res.ok) {
@@ -60,12 +59,13 @@ export async function sendReply(
 ): Promise<{ success: boolean; data?: Record<string, unknown>; error?: string }> {
   const res = await fetch(`${API_BASE}/emails/reply`, {
     method: 'POST',
-    headers: headers(),
+    headers: headers(leadEmail),
     body: JSON.stringify({
       campaign_id: campaignId,
       reply_to_email: leadEmail,
       body: replyBody,
     }),
+    signal: AbortSignal.timeout(15000),
   });
 
   if (!res.ok) {
@@ -84,11 +84,12 @@ export async function tagLead(
 ): Promise<void> {
   const res = await fetch(`${API_BASE}/leads/label/assign`, {
     method: 'POST',
-    headers: headers(),
+    headers: headers(leadEmail),
     body: JSON.stringify({
       email: leadEmail,
       label,
     }),
+    signal: AbortSignal.timeout(15000),
   });
 
   if (!res.ok) {
@@ -104,11 +105,12 @@ export async function deleteLead(
 ): Promise<void> {
   const res = await fetch(`${API_BASE}/leads`, {
     method: 'DELETE',
-    headers: headers(),
+    headers: headers(leadEmail),
     body: JSON.stringify({
       campaign_id: campaignId,
       email: leadEmail,
     }),
+    signal: AbortSignal.timeout(15000),
   });
 
   if (!res.ok) {
@@ -121,8 +123,9 @@ export async function deleteLead(
 export async function blockEmail(email: string): Promise<void> {
   const res = await fetch(`${API_BASE}/blocklist`, {
     method: 'POST',
-    headers: headers(),
+    headers: headers(email),
     body: JSON.stringify({ email }),
+    signal: AbortSignal.timeout(15000),
   });
 
   if (!res.ok) {
@@ -135,6 +138,7 @@ export async function blockEmail(email: string): Promise<void> {
 export async function getCampaigns(): Promise<{ id: string; name: string; status: string }[]> {
   const res = await fetch(`${API_BASE}/campaigns?limit=100`, {
     headers: headers(),
+    signal: AbortSignal.timeout(15000),
   });
 
   if (!res.ok) {
@@ -176,6 +180,7 @@ export async function addLeadsToCampaign(
         skip_if_in_workspace: false,
         skip_if_in_campaign: true,
       }),
+      signal: AbortSignal.timeout(15000),
     });
 
     if (!res.ok) {
@@ -195,6 +200,7 @@ export async function addLeadsToCampaign(
 export async function getLeadLabels(): Promise<{ id: string; name: string }[]> {
   const res = await fetch(`${API_BASE}/leads/labels`, {
     headers: headers(),
+    signal: AbortSignal.timeout(15000),
   });
 
   if (!res.ok) {
@@ -208,8 +214,10 @@ export async function getLeadLabels(): Promise<{ id: string; name: string }[]> {
 
 export async function listSendingAccounts(): Promise<Array<{ email: string; daily_limit?: number }>> {
   const key = getApiKey();
+  // listSendingAccounts has no lead context — uses random key via getApiKey()
   const res = await fetch('https://api.instantly.ai/api/v2/accounts?limit=100', {
     headers: { Authorization: `Bearer ${key}` },
+    signal: AbortSignal.timeout(15000),
   });
   if (!res.ok) return [];
   const data = await res.json();

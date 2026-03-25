@@ -14,6 +14,7 @@ import { scheduleFollowUpCalls } from '@/lib/voice/call-scheduler';
 import { detectJobChanges } from '@/lib/champions/job-change-detector';
 import { recalculateHeatScores } from '@/lib/heat/account-scorer';
 import { getOptimalDelays } from './timing-optimizer';
+import { isLeadSuppressed } from './lead-suppression';
 
 export interface SequenceResult {
   linkedin_connects: number;
@@ -35,6 +36,11 @@ export async function runDailySequence(): Promise<SequenceResult> {
   // Fetch data-driven delays (falls back to D5/D5 defaults on error)
   const delays = await getOptimalDelays().catch(() => ({ dmDelay: 5, voiceDelay: 5 }));
   console.log('[orchestrator] Using delays: DM day', delays.dmDelay, 'Voice day', delays.voiceDelay);
+
+  // Ensure voice fires at least 1 day after DM to prevent same-day pile-up
+  if (delays.voiceDelay <= delays.dmDelay) {
+    delays.voiceDelay = delays.dmDelay + 1;
+  }
 
   // Run heat scores + champion check in parallel (no side effects on leads)
   const [heatUpdated, jobChanges] = await Promise.all([
@@ -72,6 +78,7 @@ export async function runDailySequence(): Promise<SequenceResult> {
           .eq('touch_type', 'linkedin_connect');
 
         if ((count || 0) > 0) continue;
+        if (await isLeadSuppressed(lead.id)) continue;
 
         const sent = await sendLinkedInConnect(lead).catch((err) => {
           console.error(`[orchestrator] LinkedIn connect failed for ${lead.id}:`, err);
@@ -91,8 +98,8 @@ export async function runDailySequence(): Promise<SequenceResult> {
       .from('pipeline_leads')
       .select('*')
       .eq('status', 'pushed')
-      .lt('pushed_at', dmWindowEnd)
-      .gte('pushed_at', dmWindowStart)
+      .gte('pushed_at', dmWindowEnd)
+      .lt('pushed_at', dmWindowStart)
       .not('linkedin_url', 'is', null)
       .limit(20);
 
@@ -106,6 +113,7 @@ export async function runDailySequence(): Promise<SequenceResult> {
           .eq('touch_type', 'linkedin_dm');
 
         if ((count || 0) > 0) continue;
+        if (await isLeadSuppressed(lead.id)) continue;
 
         const sent = await sendFollowUpDM(lead).catch((err) => {
           console.error(`[orchestrator] LinkedIn DM failed for ${lead.id}:`, err);

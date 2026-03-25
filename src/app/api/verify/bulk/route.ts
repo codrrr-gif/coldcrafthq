@@ -11,12 +11,45 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { supabase } from '@/lib/supabase/client';
 import { parseCsvEmails } from '@/lib/verify/csv-parser';
+import { requireSecret } from '@/lib/auth/api-auth';
 
 export const dynamic = 'force-dynamic';
 
 const MAX_EMAILS_PER_JOB = 50000;
 
+// SSRF protection: reject private/internal callback URLs
+function isUnsafeCallbackUrl(url: string): boolean {
+  try {
+    const parsed = new URL(url);
+    // Only allow https
+    if (parsed.protocol !== 'https:') return true;
+    const hostname = parsed.hostname.toLowerCase();
+    // Reject localhost
+    if (hostname === 'localhost' || hostname === '127.0.0.1' || hostname === '::1') return true;
+    // Reject private IP ranges
+    const parts = hostname.split('.').map(Number);
+    if (parts.length === 4 && parts.every((p) => !isNaN(p))) {
+      // 10.x.x.x
+      if (parts[0] === 10) return true;
+      // 172.16-31.x.x
+      if (parts[0] === 172 && parts[1] >= 16 && parts[1] <= 31) return true;
+      // 192.168.x.x
+      if (parts[0] === 192 && parts[1] === 168) return true;
+      // 169.254.x.x (link-local)
+      if (parts[0] === 169 && parts[1] === 254) return true;
+      // 127.x.x.x
+      if (parts[0] === 127) return true;
+    }
+    return false;
+  } catch {
+    return true; // malformed URL = unsafe
+  }
+}
+
 export async function POST(req: NextRequest) {
+  const authErr = requireSecret(req);
+  if (authErr) return authErr;
+
   try {
     let emails: string[] = [];
     let filename: string | null = null;
@@ -43,6 +76,14 @@ export async function POST(req: NextRequest) {
       const body = await req.json();
       emails = body.emails || [];
       callbackUrl = body.callback_url || null;
+    }
+
+    // SSRF protection on callback URL
+    if (callbackUrl && isUnsafeCallbackUrl(callbackUrl)) {
+      return NextResponse.json(
+        { error: 'callback_url must be a public https:// URL' },
+        { status: 400 }
+      );
     }
 
     if (!emails.length) {

@@ -7,17 +7,15 @@ import { optimizeSignalWeights } from '@/lib/learning/signal-optimizer';
 import { optimizeIcpWeights } from '@/lib/learning/icp-learner';
 import { analyzeOpeners } from '@/lib/learning/opener-analyzer';
 import { pullCampaignMetrics } from '@/lib/learning/campaign-feedback';
+import { requireSecret } from '@/lib/auth/api-auth';
 
 export const dynamic = 'force-dynamic';
 export const maxDuration = 120;
 
 export async function POST(req: NextRequest) {
-  const cronSecret = process.env.CRON_SECRET || process.env.WEBHOOK_SECRET;
-  if (cronSecret) {
-    if (req.headers.get('authorization') !== `Bearer ${cronSecret}`) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-    }
-  }
+  // Auth is mandatory — reject if secret not configured
+  const authErr = requireSecret(req);
+  if (authErr) return authErr;
 
   // Pull campaign metrics first so data is fresh for the signal optimizer blend
   const campaignsUpdated = await pullCampaignMetrics().catch((err) => {

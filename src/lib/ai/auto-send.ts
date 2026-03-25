@@ -57,6 +57,18 @@ export async function executeAutoSend(
 
   if (!reply || reply.status !== 'pending' || !reply.ai_reply) return false;
 
+  // Validate reply content before sending
+  const { validateReplyContent } = await import('./reply-validator');
+  const validation = validateReplyContent(reply.ai_reply);
+  if (!validation.valid) {
+    console.warn(`[auto-send] Content validation failed for ${replyId}: ${validation.reason}`);
+    await supabase
+      .from('replies')
+      .update({ status: 'pending', auto_send_reason: `validation_failed:${validation.reason}`, updated_at: new Date().toISOString() })
+      .eq('id', replyId);
+    return false;
+  }
+
   // Send via Instantly
   if (reply.instantly_campaign_id) {
     const result = await sendReply(
@@ -134,9 +146,12 @@ export async function processTimeoutAutoSends(): Promise<{
   let failed = 0;
 
   for (const reply of staleReplies) {
-    // Check if the sub_category allows auto-send
+    // Enforce per-playbook threshold (not just the flat 0.80 DB filter)
     const subCat = reply.sub_category as SubCategory;
     if (subCat && PLAYBOOKS[subCat] && !PLAYBOOKS[subCat].auto_send_eligible) continue;
+
+    const effectiveThreshold = await getEffectiveThreshold(subCat);
+    if (reply.confidence < effectiveThreshold) continue;
 
     const success = await executeAutoSend(reply.id, 'timeout');
     if (success) sent++;

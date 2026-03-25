@@ -18,16 +18,25 @@ function getHeaders(): HeadersInit {
 
 async function closeRequest<T>(
   path: string,
-  options: RequestInit = {}
+  options: RequestInit = {},
+  retries = 3
 ): Promise<T> {
   const res = await fetch(`${API_BASE}${path}`, {
     ...options,
     headers: { ...getHeaders(), ...(options.headers || {}) },
+    signal: AbortSignal.timeout(15000),
   });
+
+  if (res.status === 429 && retries > 0) {
+    const retryAfter = parseInt(res.headers.get('retry-after') || '5', 10);
+    console.warn(`[close] Rate limited, retrying in ${retryAfter}s (${retries} retries left)`);
+    await new Promise(r => setTimeout(r, retryAfter * 1000));
+    return closeRequest<T>(path, options, retries - 1);
+  }
 
   if (!res.ok) {
     const text = await res.text();
-    throw new Error(`Close API error ${res.status}: ${text}`);
+    throw new Error(`Close API error ${res.status}: ${text.substring(0, 200)}`);
   }
 
   return res.json() as Promise<T>;

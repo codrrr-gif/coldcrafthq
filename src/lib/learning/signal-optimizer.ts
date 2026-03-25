@@ -23,7 +23,7 @@ export async function optimizeSignalWeights(): Promise<number> {
       .from('pipeline_leads')
       .select('*', { count: 'exact', head: true })
       .eq('signal_type', signalType)
-      .eq('status', 'pushed');
+      .in('status', ['pushed', 'contacted', 'replied', 'meeting', 'won', 'opted_out']);
 
     if ((pushed || 0) < MIN_SAMPLES) continue;
 
@@ -32,7 +32,7 @@ export async function optimizeSignalWeights(): Promise<number> {
       .from('pipeline_leads')
       .select('id')
       .eq('signal_type', signalType)
-      .eq('status', 'pushed');
+      .in('status', ['pushed', 'contacted', 'replied', 'meeting', 'won', 'opted_out']);
 
     const ids = (leadIds || []).map((l) => l.id);
 
