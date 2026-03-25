@@ -15,7 +15,7 @@ export async function POST() {
       .from('pipeline_leads')
       .select('*')
       .eq('status', 'pending')
-      .order('signal_score', { ascending: false })
+      .order('composite_score', { ascending: false, nullsFirst: false })
       .limit(1)
       .maybeSingle();
 

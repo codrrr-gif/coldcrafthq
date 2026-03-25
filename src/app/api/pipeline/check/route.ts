@@ -12,9 +12,13 @@ import type { ParsedSignal } from '@/lib/gtm/types';
 import { parseFundingSignals } from '@/lib/signals/funding';
 import { parseJobPostingSignals } from '@/lib/signals/job-postings';
 import { parseLeadershipSignals } from '@/lib/signals/leadership';
+import { parseProductHuntSignals } from '@/lib/signals/product-hunt';
+import { parseTwitterSignals } from '@/lib/signals/twitter';
+import { parseCrunchbaseActivitySignals } from '@/lib/signals/crunchbase-activity';
 import { filterSignalByIcp } from '@/lib/signals/icp-filter';
 import { scoreSignal, MIN_SIGNAL_SCORE } from '@/lib/signals/scorer';
 import { hasRecentSignal } from '@/lib/signals/deduplicator';
+import { resolveDomain } from '@/lib/signals/domain-resolver';
 
 export const dynamic = 'force-dynamic';
 
@@ -53,16 +57,25 @@ async function handler() {
       if (source.name === 'google_news_funding') parsed = parseFundingSignals(items);
       else if (source.name === 'linkedin_jobs_sales') parsed = parseJobPostingSignals(items);
       else if (source.name === 'google_news_leadership') parsed = parseLeadershipSignals(items);
+      else if (source.name === 'product_hunt_launches') parsed = parseProductHuntSignals(items);
+      else if (source.name === 'twitter_signals') parsed = parseTwitterSignals(items);
+      else if (source.name === 'crunchbase_activity') parsed = parseCrunchbaseActivitySignals(items);
 
-      for (let signal of parsed) {
-        // Domain fallback: derive synthetic domain from company name if missing
-        // Lets the signal through ICP; pipeline will validate at enrichment stage
+      for (const sig of parsed) {
+        // Attempt domain resolution for signals missing a domain (e.g. G2/Capterra)
+        const signal = { ...sig };
         if (!signal.company_domain && signal.company_name) {
-          const syntheticDomain = signal.company_name
-            .toLowerCase()
-            .replace(/[^a-z0-9]+/g, '')
-            .slice(0, 30) + '.com';
-          signal = { ...signal, company_domain: syntheticDomain };
+          const resolved = await resolveDomain(signal.company_name);
+          if (resolved) {
+            signal.company_domain = resolved;
+            console.log(`[check] Resolved domain for ${signal.company_name}: ${resolved}`);
+          }
+        }
+
+        // Skip signals with no domain — synthetic domains cause 30-40% of enrichment failures
+        if (!signal.company_domain) {
+          console.warn('[check] Skipping signal — no domain:', signal.company_name);
+          continue;
         }
 
         const icpResult = filterSignalByIcp(signal);
@@ -97,7 +110,7 @@ async function handler() {
         await supabase.from('pipeline_leads').insert({
           signal_id: rawSignal.id,
           company_name: signal.company_name,
-          company_domain: signal.company_domain || signal.company_name.toLowerCase().replace(/\s+/g, '') + '.com',
+          company_domain: signal.company_domain,
           signal_type: signal.signal_type,
           signal_summary: signal.headline,
           signal_date: signal.signal_date,

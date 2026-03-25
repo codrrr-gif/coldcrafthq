@@ -30,7 +30,7 @@ export function parseJobPostingSignals(items: ApifyDatasetItem[]): ParsedSignal[
       company_domain: domain,
       headline: `${company} is hiring: ${String(item.title || item.jobTitle || '')}`,
       signal_url: url,
-      signal_date: new Date().toISOString().split('T')[0],
+      signal_date: String(item.datePosted || item.publishedAt || item.date || new Date().toISOString()).split('T')[0],
       raw_data: item as Record<string, unknown>,
     });
   }

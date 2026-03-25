@@ -3,7 +3,7 @@
 // Multi-channel sequence orchestrator.
 // Runs on every cron tick (daily) and handles:
 //   D1  — LinkedIn connection request (newly pushed leads)
-//   D5  — LinkedIn DM + Vapi voice follow-up
+//   D(n) — LinkedIn DM + Vapi voice (data-driven timing from timing-optimizer)
 //   Champions — detect job changes in watchlist
 //   Heat — recalculate account heat scores
 // ============================================
@@ -13,6 +13,7 @@ import { sendLinkedInConnect, sendFollowUpDM } from '@/lib/linkedin/connection-s
 import { scheduleFollowUpCalls } from '@/lib/voice/call-scheduler';
 import { detectJobChanges } from '@/lib/champions/job-change-detector';
 import { recalculateHeatScores } from '@/lib/heat/account-scorer';
+import { getOptimalDelays } from './timing-optimizer';
 
 export interface SequenceResult {
   linkedin_connects: number;
@@ -30,6 +31,10 @@ export async function runDailySequence(): Promise<SequenceResult> {
     job_changes: 0,
     heat_scores_updated: 0,
   };
+
+  // Fetch data-driven delays (falls back to D5/D5 defaults on error)
+  const delays = await getOptimalDelays().catch(() => ({ dmDelay: 5, voiceDelay: 5 }));
+  console.log('[orchestrator] Using delays: DM day', delays.dmDelay, 'Voice day', delays.voiceDelay);
 
   // Run heat scores + champion check in parallel (no side effects on leads)
   const [heatUpdated, jobChanges] = await Promise.all([
@@ -76,21 +81,23 @@ export async function runDailySequence(): Promise<SequenceResult> {
       }
     }
 
-    // D5: LinkedIn DM for leads pushed 4-5 days ago
-    const fiveDaysAgo = new Date(Date.now() - 5 * 24 * 60 * 60 * 1000).toISOString();
-    const fourDaysAgo = new Date(Date.now() - 4 * 24 * 60 * 60 * 1000).toISOString();
+    // LinkedIn DM: data-driven delay (was hardcoded D5)
+    const dmWindowEndMs = delays.dmDelay * 24 * 60 * 60 * 1000;
+    const dmWindowStartMs = (delays.dmDelay - 1) * 24 * 60 * 60 * 1000;
+    const dmWindowEnd = new Date(Date.now() - dmWindowEndMs).toISOString();
+    const dmWindowStart = new Date(Date.now() - dmWindowStartMs).toISOString();
 
-    const { data: d5Leads } = await supabase
+    const { data: dmLeads } = await supabase
       .from('pipeline_leads')
       .select('*')
       .eq('status', 'pushed')
-      .lt('pushed_at', fiveDaysAgo)
-      .gte('pushed_at', fourDaysAgo)
+      .lt('pushed_at', dmWindowEnd)
+      .gte('pushed_at', dmWindowStart)
       .not('linkedin_url', 'is', null)
       .limit(20);
 
-    if (d5Leads?.length) {
-      for (const lead of d5Leads) {
+    if (dmLeads?.length) {
+      for (const lead of dmLeads) {
         // Skip if already sent a DM
         const { count } = await supabase
           .from('touchpoints')
@@ -109,8 +116,8 @@ export async function runDailySequence(): Promise<SequenceResult> {
     }
   }
 
-  // D5: Voice follow-up (handled by call-scheduler, already has its own window logic)
-  result.voice_calls = await scheduleFollowUpCalls().catch((err) => {
+  // Voice follow-up: pass data-driven delay to call-scheduler
+  result.voice_calls = await scheduleFollowUpCalls(delays.voiceDelay).catch((err) => {
     console.error('[orchestrator] Voice scheduling failed:', err);
     return 0;
   });

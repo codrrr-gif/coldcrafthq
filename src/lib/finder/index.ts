@@ -56,9 +56,11 @@ export async function findEmail(
   domain: string,
 ): Promise<FinderResult> {
   const triedPatterns: string[] = [];
+  let findymailAttempted = false;
 
   // Step 0: FindyMail lookup — highest accuracy, try before SMTP guessing
   const findymailEmail = await findEmailWithFindyMail(firstName, lastName, domain);
+  findymailAttempted = true;
   if (findymailEmail) {
     triedPatterns.push(findymailEmail);
     const result = await verifyEmail(findymailEmail, {
@@ -142,8 +144,33 @@ export async function findEmail(
     }
   }
 
-  // Step 3: Catch-all domain — return most probable pattern unconfirmed
+  // Step 3: Catch-all domain — try FindyMail fallback, else return most probable unconfirmed
   if (isCatchAll) {
+    // Only call FindyMail if we haven't already tried it in Step 0
+    if (!findymailAttempted && process.env.FINDYMAIL_API_KEY) {
+      const catchAllEmail = await findEmailWithFindyMail(firstName, lastName, domain);
+      if (catchAllEmail) {
+        if (!triedPatterns.includes(catchAllEmail)) triedPatterns.push(catchAllEmail);
+        const result = await verifyEmail(catchAllEmail, {
+          use_million_verifier: false,
+          use_findymail: false,
+        });
+        if (result.verdict === 'valid' || result.verdict === 'risky') {
+          await updateDomainPattern(catchAllEmail, firstName, lastName);
+          return {
+            email: catchAllEmail,
+            found: true,
+            pattern: null,
+            found_via: 'findymail_catchall',
+            verdict: result.verdict,
+            score: result.score,
+            tried_patterns: triedPatterns,
+          };
+        }
+      }
+    }
+
+    // FindyMail unavailable, already tried, or returned nothing — fall back to best guess
     const mostProbable = permutations[0];
     return {
       email: mostProbable,

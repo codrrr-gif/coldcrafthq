@@ -6,6 +6,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { optimizeSignalWeights } from '@/lib/learning/signal-optimizer';
 import { optimizeIcpWeights } from '@/lib/learning/icp-learner';
 import { analyzeOpeners } from '@/lib/learning/opener-analyzer';
+import { pullCampaignMetrics } from '@/lib/learning/campaign-feedback';
 
 export const dynamic = 'force-dynamic';
 export const maxDuration = 120;
@@ -17,6 +18,13 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
   }
+
+  // Pull campaign metrics first so data is fresh for the signal optimizer blend
+  const campaignsUpdated = await pullCampaignMetrics().catch((err) => {
+    console.error('[learning] Campaign feedback failed:', err);
+    return 0;
+  });
+  console.log(`[learning] Campaign metrics pulled: ${campaignsUpdated} campaigns updated`);
 
   // Run sequentially to avoid upsert race conditions on learning_weights
   const signalWeightsUpdated = await optimizeSignalWeights().catch((err) => {
@@ -36,6 +44,7 @@ export async function POST(req: NextRequest) {
 
   return NextResponse.json({
     success: true,
+    campaigns_updated: campaignsUpdated,
     signal_weights_updated: signalWeightsUpdated,
     icp_weights_updated: icpWeightsUpdated,
     openers_extracted: openersExtracted,

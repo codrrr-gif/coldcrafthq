@@ -12,6 +12,38 @@ import type { VerificationResult } from './types';
 const CHUNK_SIZE = 10; // Emails per cron invocation
 const MAX_PROCESSING_MS = 50000; // Leave 10s buffer on 60s timeout
 
+/**
+ * Fire a webhook callback when a job completes.
+ * Requires the `callback_url` column on `verification_jobs` (TEXT, nullable).
+ * Fire-and-forget — failures are logged but never retried.
+ */
+async function fireWebhookCallback(jobId: string): Promise<void> {
+  const { data: job } = await supabase
+    .from('verification_jobs')
+    .select('callback_url, total_emails, processed, valid, invalid, risky, unknown')
+    .eq('id', jobId)
+    .single();
+
+  if (!job?.callback_url) return;
+
+  fetch(job.callback_url, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      event: 'verification_job.completed',
+      job_id: jobId,
+      total_emails: job.total_emails,
+      processed: job.processed,
+      valid: job.valid,
+      invalid: job.invalid,
+      risky: job.risky,
+      unknown: job.unknown,
+      completed_at: new Date().toISOString(),
+    }),
+    signal: AbortSignal.timeout(10000),
+  }).catch(console.error);
+}
+
 export async function processVerificationJobs(): Promise<{
   processed: number;
   job_id: string | null;
@@ -55,6 +87,8 @@ export async function processVerificationJobs(): Promise<{
         completed_at: new Date().toISOString(),
       })
       .eq('id', job.id);
+
+    await fireWebhookCallback(job.id);
 
     return { processed: 0, job_id: job.id };
   }
@@ -149,4 +183,8 @@ async function updateJobCounters(jobId: string): Promise<void> {
       } : {}),
     })
     .eq('id', jobId);
+
+  if (isComplete) {
+    await fireWebhookCallback(jobId);
+  }
 }

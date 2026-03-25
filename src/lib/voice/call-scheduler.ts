@@ -1,23 +1,29 @@
 // src/lib/voice/call-scheduler.ts
-// Determines which pushed leads should receive a voice call follow-up on day 5.
+// Determines which pushed leads should receive a voice call follow-up.
+// Delay is data-driven (passed from timing-optimizer via sequence-runner).
 // Only calls if: VAPI_API_KEY is set, lead has phone number, no prior voice touchpoint.
 
 import { supabase } from '@/lib/supabase/client';
 import { initiateCall } from './vapi-client';
 
-export async function scheduleFollowUpCalls(): Promise<number> {
+/**
+ * @param voiceDelayDays - Days after push to schedule calls. Defaults to 5 for backward compat.
+ */
+export async function scheduleFollowUpCalls(voiceDelayDays = 5): Promise<number> {
   if (!process.env.VAPI_API_KEY) return 0;
 
-  const fiveDaysAgo = new Date(Date.now() - 5 * 24 * 60 * 60 * 1000).toISOString();
-  const fourDaysAgo = new Date(Date.now() - 4 * 24 * 60 * 60 * 1000).toISOString();
+  const windowEndMs = voiceDelayDays * 24 * 60 * 60 * 1000;
+  const windowStartMs = (voiceDelayDays - 1) * 24 * 60 * 60 * 1000;
+  const windowEnd = new Date(Date.now() - windowEndMs).toISOString();
+  const windowStart = new Date(Date.now() - windowStartMs).toISOString();
 
-  // Leads pushed 4-5 days ago (day 5 window)
+  // Leads pushed within the voice delay window
   const { data: leads } = await supabase
     .from('pipeline_leads')
     .select('*')
     .eq('status', 'pushed')
-    .lt('pushed_at', fiveDaysAgo)
-    .gte('pushed_at', fourDaysAgo)
+    .lt('pushed_at', windowEnd)
+    .gte('pushed_at', windowStart)
     .not('first_name', 'is', null)
     .limit(10);
 

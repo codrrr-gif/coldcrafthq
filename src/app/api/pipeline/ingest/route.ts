@@ -7,7 +7,7 @@
 
 import { NextRequest, NextResponse } from 'next/server';
 import { supabase } from '@/lib/supabase/client';
-import { runGoogleSearch, runLinkedInJobsSearch } from '@/lib/apify';
+import { runGoogleSearch, runLinkedInJobsSearch, runProductHuntSearch, runTwitterSearch, runCrunchbaseActivity } from '@/lib/apify';
 
 export const dynamic = 'force-dynamic';
 
@@ -37,6 +37,12 @@ async function handler(req: NextRequest) {
 
         if (source.name === 'linkedin_jobs_sales') {
           run = await runLinkedInJobsSearch(source.search_queries as string[], 'United States', 100);
+        } else if (source.name === 'product_hunt_launches') {
+          run = await runProductHuntSearch(50);
+        } else if (source.name === 'twitter_signals') {
+          run = await runTwitterSearch(source.search_queries as string[], 100);
+        } else if (source.name === 'crunchbase_activity') {
+          run = await runCrunchbaseActivity(source.search_queries as string[], 200);
         } else {
           run = await runGoogleSearch(source.search_queries as string[], 5);
         }

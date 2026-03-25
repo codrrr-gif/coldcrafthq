@@ -8,12 +8,13 @@
 import { supabase } from '@/lib/supabase/client';
 import { findDecisionMaker } from '@/lib/enrichment/contact-finder';
 import { findEmail } from '@/lib/finder';
-import { researchLead } from '@/lib/enrichment/research-agent';
+import { researchLead } from '@/lib/enrichment/research-agents';
 import { getCampaignId } from '@/lib/enrichment/campaign-mapper';
 import { addLeadsToCampaign } from '@/lib/instantly';
 import type { PipelineLead } from '@/lib/gtm/types';
 import { addToWatchlist } from '@/lib/champions/watchlist';
 import { syncLeadToCrm, logActivityToClose } from '@/lib/crm/close-sync';
+import { calculateCompositeScore } from '@/lib/pipeline/composite-scorer';
 
 async function updateLead(id: string, updates: Partial<PipelineLead>) {
   await supabase
@@ -59,6 +60,23 @@ export async function processPipelineLead(lead: PipelineLead): Promise<void> {
       email_found_via: emailResult.found_via,
       status: 'verifying',
     });
+
+    // Calculate composite score (signal + email + company fit)
+    // NOTE: composite_score column must be added to pipeline_leads table in Supabase
+    //   ALTER TABLE pipeline_leads ADD COLUMN composite_score smallint;
+    const { data: companyRow } = await supabase
+      .from('companies')
+      .select('tam_score')
+      .eq('domain', company_domain)
+      .maybeSingle();
+
+    const compositeScore = calculateCompositeScore({
+      signal_score: lead.signal_score,
+      email_score: emailResult.score,
+      tam_score: companyRow?.tam_score || null,
+    });
+
+    await updateLead(id, { composite_score: compositeScore } as Partial<PipelineLead>);
 
     // Only push verified emails
     if (emailResult.verdict !== 'valid') {

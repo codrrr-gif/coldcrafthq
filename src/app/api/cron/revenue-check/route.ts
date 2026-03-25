@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import { checkRevenueOutcomes } from '@/lib/crm/revenue-attribution';
+import { notifyCronFailure } from '@/lib/slack';
 
 export async function GET(request: Request) {
   const authHeader = request.headers.get('authorization');
@@ -13,6 +14,7 @@ export async function GET(request: Request) {
     return NextResponse.json(result);
   } catch (error) {
     console.error('[revenue-check] Failed:', error);
+    await notifyCronFailure('revenue-check', error).catch(() => {});
     return NextResponse.json({ error: 'Revenue check failed' }, { status: 500 });
   }
 }

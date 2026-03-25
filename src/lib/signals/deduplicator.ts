@@ -13,7 +13,8 @@ export async function hasRecentSignal(
     .select('id')
     .eq('company_domain', companyDomain)
     .eq('signal_type', signalType)
-    .gte('created_at', cutoff)
+    // Use signal_date (actual event date) not created_at (DB insertion time)
+    .gte('signal_date', cutoff)
     .limit(1)
     .maybeSingle();
   return !!data;

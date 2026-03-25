@@ -20,6 +20,7 @@ export async function POST(req: NextRequest) {
   try {
     let emails: string[] = [];
     let filename: string | null = null;
+    let callbackUrl: string | null = null;
 
     const contentType = req.headers.get('content-type') || '';
 
@@ -28,6 +29,7 @@ export async function POST(req: NextRequest) {
       const formData = await req.formData();
       const file = formData.get('file') as File | null;
       const emailColumn = (formData.get('email_column') as string) || 'email';
+      callbackUrl = (formData.get('callback_url') as string) || null;
 
       if (!file) {
         return NextResponse.json({ error: 'No file uploaded' }, { status: 400 });
@@ -40,6 +42,7 @@ export async function POST(req: NextRequest) {
       // JSON body
       const body = await req.json();
       emails = body.emails || [];
+      callbackUrl = body.callback_url || null;
     }
 
     if (!emails.length) {
@@ -63,6 +66,8 @@ export async function POST(req: NextRequest) {
     }
 
     // Create the job
+    // NOTE: `callback_url` column (TEXT, nullable) must be added to
+    // the `verification_jobs` table in Supabase before this field is persisted.
     const { data: job, error: jobError } = await supabase
       .from('verification_jobs')
       .insert({
@@ -74,6 +79,7 @@ export async function POST(req: NextRequest) {
         risky: 0,
         unknown: 0,
         source_filename: filename,
+        callback_url: callbackUrl,
       })
       .select('id')
       .single();

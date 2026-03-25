@@ -21,7 +21,7 @@ export type PipelineStatus =
   | 'failed'
   | 'filtered';
 
-export type EmailFoundVia = 'pattern_cache' | 'smtp_permutation' | 'external';
+export type EmailFoundVia = 'pattern_cache' | 'smtp_permutation' | 'external' | 'findymail_catchall';
 
 export interface DomainPattern {
   domain: string;
@@ -88,6 +88,7 @@ export interface PipelineLead {
   opportunity_signals: string[] | null;
   personalized_opener: string | null;
   research_data: Record<string, unknown> | null;
+  composite_score: number | null;
   instantly_campaign_id: string | null;
   status: PipelineStatus;
   failure_reason: string | null;

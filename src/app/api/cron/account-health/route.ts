@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import { checkAccountHealth } from '@/lib/instantly-health';
+import { notifyCronFailure } from '@/lib/slack';
 
 export async function GET(request: Request) {
   const authHeader = request.headers.get('authorization');
@@ -13,6 +14,7 @@ export async function GET(request: Request) {
     return NextResponse.json({ accounts: result.accounts, flagged: result.flagged });
   } catch (error) {
     console.error('[account-health] Failed:', error);
+    await notifyCronFailure('account-health', error).catch(() => {});
     return NextResponse.json({ error: 'Health check failed' }, { status: 500 });
   }
 }

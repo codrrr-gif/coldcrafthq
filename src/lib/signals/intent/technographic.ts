@@ -35,10 +35,20 @@ export async function detectTechStackSignals(): Promise<ParsedSignal[]> {
           const companyName = String(item.companyName || '');
           if (!companyName) continue;
 
-          // Derive domain from LinkedIn company URL or company name
-          const liUrl = String(item.companyUrl || '');
-          const slug = liUrl.replace(/.*linkedin\.com\/company\//, '').replace(/\/$/, '');
-          const domain = slug ? `${slug}.com` : null;
+          // Prefer actual company website if available; fall back to cleaned LinkedIn slug
+          const website = String(item.companyWebsite || item.website || '');
+          let domain: string | null = null;
+          if (website) {
+            try { domain = new URL(website.startsWith('http') ? website : `https://${website}`).hostname.replace(/^www\./, ''); } catch {}
+          }
+          if (!domain) {
+            const liUrl = String(item.companyUrl || '');
+            const slug = liUrl.replace(/.*linkedin\.com\/company\//, '').replace(/\/$/, '');
+            if (slug) {
+              const cleaned = slug.replace(/-(inc|llc|ltd|co|corp|group|hq)$/i, '');
+              domain = `${cleaned}.com`;
+            }
+          }
 
           signals.push({
             signal_type: 'tech_stack',

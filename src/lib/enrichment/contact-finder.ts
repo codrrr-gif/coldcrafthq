@@ -7,7 +7,7 @@
 //   Level 3: Broad Google search for decision maker at company
 // ============================================
 
-import { runGoogleSearch, runActor, getRunStatus, getDatasetItems } from '@/lib/apify';
+import { runGoogleSearch, runActor, runLinkedInPeopleSearch, getRunStatus, getDatasetItems } from '@/lib/apify';
 import { isTitleInIcp } from '@/lib/signals/icp-filter';
 
 export interface Contact {
@@ -25,12 +25,52 @@ const DECISION_MAKER_TITLES = [
   'Director of Sales', 'Director of Revenue', 'CEO', 'Founder',
 ];
 
+// ── Level 0: Direct LinkedIn People Search ─────────────────────────────────
+
+async function findViaLinkedInPeopleSearch(
+  companyName: string,
+): Promise<Contact | null> {
+  try {
+    const titleKeywords = ['VP Sales', 'Head of Sales', 'CRO', 'VP Marketing', 'Head of Growth', 'CMO', 'CEO', 'Founder'];
+    const { runId, datasetId } = await runLinkedInPeopleSearch(companyName, titleKeywords, 10);
+    const items = await pollApifyRun(runId, datasetId, 90);
+
+    for (const item of items) {
+      const fullName = String(item.name || item.fullName || '');
+      const role = String(item.title || item.headline || item.position || '');
+      const profileUrl = String(item.url || item.profileUrl || item.linkedinUrl || '');
+
+      if (!fullName || !role) continue;
+
+      // Check if the title matches our ICP decision-maker roles
+      if (!isTitleInIcp(role)) continue;
+
+      const name = parseFullName(fullName);
+      if (!name) continue;
+
+      return {
+        ...name,
+        title: role.split(' at ')[0].split(' | ')[0].trim(),
+        linkedin_url: profileUrl.includes('linkedin.com') ? profileUrl : null,
+        source: 'linkedin_people_search',
+      };
+    }
+  } catch (err) {
+    console.error('[contact-finder] LinkedIn People Search failed:', err);
+  }
+  return null;
+}
+
 // ── Level 1: Google → LinkedIn search ──────────────────────────────────────
 
 export async function findDecisionMaker(
   companyName: string,
   companyDomain: string,
 ): Promise<Contact | null> {
+  // Level 0: Direct LinkedIn People Search (highest fidelity)
+  const linkedInContact = await findViaLinkedInPeopleSearch(companyName);
+  if (linkedInContact) return linkedInContact;
+
   // Level 1: LinkedIn via Google
   const contact = await findViaLinkedInSearch(companyName, companyDomain);
   if (contact) return contact;

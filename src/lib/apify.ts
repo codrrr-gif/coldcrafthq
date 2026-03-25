@@ -105,3 +105,59 @@ export async function runLinkedInJobsSearch(
     publishedAt: 'r86400', // last 24 hours
   });
 }
+
+// Run actor for Crunchbase activity tracking
+export async function runCrunchbaseActivity(
+  keywords: string[],
+  limit = 200,
+): Promise<{ runId: string; datasetId: string }> {
+  return runActor('curious_coder/crunchbase-companies-scraper', {
+    search: keywords.join(','),
+    maxItems: limit,
+  });
+}
+
+// Run actor for Product Hunt Scraper
+export async function runProductHuntSearch(
+  limit = 50,
+): Promise<{ runId: string; datasetId: string }> {
+  return runActor('misceres/producthunt-scraper', {
+    startUrls: [
+      { url: 'https://www.producthunt.com/topics/saas' },
+      { url: 'https://www.producthunt.com/topics/developer-tools' },
+      { url: 'https://www.producthunt.com/topics/productivity' },
+    ],
+    maxItems: limit,
+    sortBy: 'NEWEST',
+  });
+}
+
+// Run actor for Twitter/X Search Scraper
+export async function runTwitterSearch(
+  queries: string[],
+  limit = 100,
+): Promise<{ runId: string; datasetId: string }> {
+  return runActor('apidojo/twitter-search-scraper', {
+    searchTerms: queries,
+    maxTweets: limit,
+    sort: 'Latest',
+    tweetLanguage: 'en',
+  });
+}
+
+// Run actor for LinkedIn People Search (contact finding)
+// Uses search URL format to find decision makers at a specific company.
+export async function runLinkedInPeopleSearch(
+  companyName: string,
+  titleKeywords: string[],
+  limit = 10,
+): Promise<{ runId: string; datasetId: string }> {
+  // Build LinkedIn search URL with company and title filters
+  const titleQuery = titleKeywords.map((t) => `"${t}"`).join(' OR ');
+  const searchUrl = `https://www.linkedin.com/search/results/people/?keywords=${encodeURIComponent(`${companyName} ${titleQuery}`)}&origin=GLOBAL_SEARCH_HEADER`;
+
+  return runActor('anchor/linkedin-people-search', {
+    startUrls: [{ url: searchUrl }],
+    maxItems: limit,
+  });
+}
