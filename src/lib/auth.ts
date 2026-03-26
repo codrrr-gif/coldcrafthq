@@ -10,19 +10,24 @@ export const authOptions: NextAuthOptions = {
         password: { label: 'Password', type: 'password' },
       },
       async authorize(credentials) {
-        const email = process.env.AUTH_EMAIL
+        const emailsRaw = process.env.AUTH_EMAIL
         const password = process.env.AUTH_PASSWORD
 
-        if (!email || !password) {
+        if (!emailsRaw || !password) {
           console.error('[Auth] AUTH_EMAIL or AUTH_PASSWORD not set')
           return null
         }
 
+        const allowedEmails = emailsRaw.split(',').map(e => e.trim().toLowerCase())
+        const inputEmail = credentials?.email?.trim().toLowerCase()
+
         if (
-          credentials?.email === email &&
+          inputEmail &&
+          allowedEmails.includes(inputEmail) &&
           credentials?.password === password
         ) {
-          return { id: '1', email, name: 'Matt' }
+          const name = inputEmail.split('@')[0].replace(/^\w/, (c: string) => c.toUpperCase())
+          return { id: inputEmail, email: inputEmail, name }
         }
 
         return null
