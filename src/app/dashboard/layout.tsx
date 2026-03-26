@@ -13,7 +13,9 @@ const navItems = [
   { href: '/dashboard/insights', label: 'Insights', icon: 'chart' },
   { href: '/dashboard/analytics', label: 'Analytics', icon: 'analytics' },
   { href: '/dashboard/crm', label: 'CRM', icon: 'crm' },
-  { href: '/dashboard/knowledge', label: 'Knowledge Base', icon: 'book' },
+  { href: '/dashboard/knowledge', label: 'Knowledge', icon: 'book' },
+  { href: '/dashboard/clients', label: 'Clients', icon: 'crm' },
+  { href: '/dashboard/requests', label: 'Requests', icon: 'inbox' },
   { href: '/dashboard/settings', label: 'Settings', icon: 'settings' },
 ];
 
@@ -88,7 +90,7 @@ export default function DashboardLayout({
             <Link href="/" className="flex items-center gap-2">
               <span className="font-display text-lg text-text-primary">ColdCraft</span>
               <span className="font-mono text-[10px] tracking-wider uppercase text-accent-primary bg-accent-glow px-2 py-0.5 rounded">
-                Reply Engine
+                GTM System
               </span>
             </Link>
 
