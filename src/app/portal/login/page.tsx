@@ -1,35 +1,32 @@
-'use client'
+'use client';
 
-import { signIn } from 'next-auth/react'
-import { useRouter, useSearchParams } from 'next/navigation'
-import { useState, Suspense } from 'react'
+import { signIn } from 'next-auth/react';
+import { useRouter } from 'next/navigation';
+import { useState } from 'react';
 
-function LoginForm() {
-  const router = useRouter()
-  const searchParams = useSearchParams()
-  const [email, setEmail] = useState('')
-  const [password, setPassword] = useState('')
-  const [error, setError] = useState('')
-  const [loading, setLoading] = useState(false)
-
-  const callbackUrl = searchParams.get('callbackUrl') || '/dashboard'
+export default function PortalLoginPage() {
+  const router = useRouter();
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
+  const [error, setError] = useState('');
+  const [loading, setLoading] = useState(false);
 
   async function handleSubmit(e: React.FormEvent) {
-    e.preventDefault()
-    setError('')
-    setLoading(true)
+    e.preventDefault();
+    setError('');
+    setLoading(true);
 
-    const result = await signIn('admin-credentials', {
+    const result = await signIn('portal-credentials', {
       email,
       password,
       redirect: false,
-    })
+    });
 
     if (result?.error) {
-      setError('Invalid email or password')
-      setLoading(false)
+      setError('Invalid email or password');
+      setLoading(false);
     } else {
-      router.push(callbackUrl)
+      router.push('/portal/dashboard');
     }
   }
 
@@ -37,10 +34,8 @@ function LoginForm() {
     <div className="min-h-screen bg-bg-primary flex items-center justify-center px-4">
       <div className="w-full max-w-sm">
         <div className="text-center mb-8">
-          <h1 className="font-display text-2xl text-text-primary">ColdCraft</h1>
-          <span className="font-mono text-[10px] tracking-wider uppercase text-accent-primary bg-accent-glow px-2 py-0.5 rounded inline-block mt-2">
-            GTM System
-          </span>
+          <h1 className="font-display text-2xl text-text-primary">Client Portal</h1>
+          <p className="text-sm text-text-secondary mt-2">Sign in to view your campaigns</p>
         </div>
 
         <form onSubmit={handleSubmit} className="space-y-4">
@@ -56,7 +51,6 @@ function LoginForm() {
               required
               autoFocus
               className="w-full px-3 py-2 bg-bg-surface border border-border-subtle rounded-md text-sm text-text-primary placeholder:text-text-tertiary focus:outline-none focus:border-accent-primary transition-colors"
-              placeholder="matt@coldcrafthq.com"
             />
           </div>
 
@@ -74,9 +68,7 @@ function LoginForm() {
             />
           </div>
 
-          {error && (
-            <p className="text-sm text-red-400 font-mono">{error}</p>
-          )}
+          {error && <p className="text-sm text-red-400 font-mono">{error}</p>}
 
           <button
             type="submit"
@@ -88,17 +80,5 @@ function LoginForm() {
         </form>
       </div>
     </div>
-  )
-}
-
-export default function LoginPage() {
-  return (
-    <Suspense fallback={
-      <div className="min-h-screen bg-bg-primary flex items-center justify-center">
-        <div className="text-text-secondary text-sm">Loading...</div>
-      </div>
-    }>
-      <LoginForm />
-    </Suspense>
-  )
+  );
 }
