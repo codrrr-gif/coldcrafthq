@@ -3,6 +3,8 @@ import { supabase } from '@/lib/supabase/client';
 import { getStripe } from '@/lib/portal/stripe';
 import { notifySlack } from '@/lib/slack';
 
+export const dynamic = 'force-dynamic';
+
 // GET: List all clients
 export async function GET() {
   const { data } = await supabase
