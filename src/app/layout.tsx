@@ -51,9 +51,6 @@ const jetbrainsMono = JetBrains_Mono({
 });
 
 export const metadata: Metadata = {
-  icons: {
-    icon: [{ url: "/favicon.svg", type: "image/svg+xml" }],
-  },
   title: "ColdCraft HQ — Cold Email Systems That Book B2B Meetings",
   description:
     "We build and manage complete cold outreach infrastructure for B2B companies. Dedicated domains, verified data, specialist copywriting. Meetings on your calendar in 3 weeks.",
