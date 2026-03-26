@@ -14,6 +14,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createHmac } from 'crypto';
 import { supabase } from '@/lib/supabase/client';
+import { insertActivity } from '@/lib/portal/activity';
 
 function verifySignature(body: string, signature: string | null): boolean {
   const secret = process.env.CALENDLY_SIGNING_SECRET;
@@ -75,7 +76,7 @@ export async function POST(req: NextRequest) {
     // Look up pipeline_lead for signal context
     const { data: pipelineLead } = await supabase
       .from('pipeline_leads')
-      .select('id, signal_score, signal_type, signal_summary, instantly_campaign_id, research_summary, company_name, title')
+      .select('id, client_id, signal_score, signal_type, signal_summary, instantly_campaign_id, research_summary, company_name, title')
       .eq('email', email)
       .single();
 
@@ -90,6 +91,26 @@ export async function POST(req: NextRequest) {
         .from('pipeline_leads')
         .update({ status: 'meeting', updated_at: new Date().toISOString() })
         .eq('id', pipelineLead.id);
+    }
+
+    // Insert meeting record + activity feed
+    if (pipelineLead?.client_id) {
+      await supabase.from('meetings').insert({
+        client_id: pipelineLead.client_id,
+        prospect_name: name || email,
+        prospect_company: pipelineLead.company_name || '',
+        prospect_email: email,
+        scheduled_at: eventStartTime || new Date().toISOString(),
+        source_campaign: pipelineLead.instantly_campaign_id || null,
+        source_signal: pipelineLead.signal_type || null,
+        calendly_event_id: (resource?.uri as string) || null,
+      });
+
+      insertActivity(
+        pipelineLead.client_id,
+        'meeting_booked',
+        `Meeting booked with ${name || email}${pipelineLead.company_name ? ' at ' + pipelineLead.company_name : ''}`
+      ).catch(() => {});
     }
 
     // Create enriched opportunity in Close
