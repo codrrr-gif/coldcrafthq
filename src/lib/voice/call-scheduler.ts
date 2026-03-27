@@ -28,18 +28,42 @@ export async function scheduleFollowUpCalls(voiceDelayDays = 5): Promise<number>
     .not('first_name', 'is', null)
     .limit(10);
 
-  if (!leads?.length) return 0;
+  // Also process scheduled callbacks
+  const { data: callbacks } = await supabase
+    .from('voice_calls')
+    .select('*, pipeline_leads(*)')
+    .eq('status', 'scheduled')
+    .lte('called_at', new Date().toISOString())
+    .limit(5);
+
+  const allLeads = [...(leads || [])];
+  const callbackLeadIds = new Set<string>();
+
+  if (callbacks?.length) {
+    for (const cb of callbacks) {
+      if (cb.pipeline_leads && cb.lead_id) {
+        callbackLeadIds.add(cb.lead_id);
+        allLeads.push(cb.pipeline_leads);
+      }
+    }
+  }
+
+  if (!allLeads.length) return 0;
   let called = 0;
 
-  for (const lead of leads) {
-    // Skip if already has a voice touchpoint
-    const { count } = await supabase
-      .from('touchpoints')
-      .select('*', { count: 'exact', head: true })
-      .eq('lead_id', lead.id)
-      .eq('channel', 'voice');
+  for (const lead of allLeads) {
+    const isCallback = callbackLeadIds.has(lead.id);
 
-    if ((count || 0) > 0) continue;
+    // Skip voice touchpoint check for callbacks (they're re-calls)
+    if (!isCallback) {
+      const { count } = await supabase
+        .from('touchpoints')
+        .select('*', { count: 'exact', head: true })
+        .eq('lead_id', lead.id)
+        .eq('channel', 'voice');
+
+      if ((count || 0) > 0) continue;
+    }
     if (await isLeadSuppressed(lead.id)) continue;
 
     // Phone number must be in research_data
@@ -78,8 +102,19 @@ export async function scheduleFollowUpCalls(voiceDelayDays = 5): Promise<number>
         touch_type: 'voice_call',
         status: 'sent',
         external_id: result.callId,
-        content: `Calling ${lead.first_name} at ${lead.company_name}`,
+        content: isCallback
+          ? `Callback: Calling ${lead.first_name} at ${lead.company_name}`
+          : `Calling ${lead.first_name} at ${lead.company_name}`,
       }).then(null, console.error);
+
+      // Mark scheduled callback as processed
+      if (isCallback) {
+        await supabase.from('voice_calls')
+          .update({ status: 'initiated', vapi_call_id: result.callId })
+          .eq('lead_id', lead.id)
+          .eq('status', 'scheduled')
+          .then(null, console.error);
+      }
 
       called++;
     } catch (err) {
