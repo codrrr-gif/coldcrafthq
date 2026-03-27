@@ -8,7 +8,9 @@ export const supabase: SupabaseClient = new Proxy({} as SupabaseClient, {
       const url = process.env.SUPABASE_URL;
       const key = process.env.SUPABASE_SERVICE_ROLE_KEY;
       if (!url || !key) throw new Error('SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY must be set');
-      _supabase = createClient(url, key);
+      _supabase = createClient(url, key, {
+        global: { fetch: (url, options = {}) => fetch(url, { ...options, cache: 'no-store' }) },
+      });
     }
     return (_supabase as unknown as Record<string, unknown>)[prop as string];
   },

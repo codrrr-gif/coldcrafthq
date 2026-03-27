@@ -22,8 +22,8 @@ export async function middleware(req: NextRequest) {
     return NextResponse.next();
   }
 
-  // Portal API — requires portal session
-  if (pathname.startsWith('/api/portal')) {
+  // Portal API — requires portal session (except invite accept, which is public)
+  if (pathname.startsWith('/api/portal') && !pathname.startsWith('/api/portal/invite')) {
     if (!token || !token.clientId) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }

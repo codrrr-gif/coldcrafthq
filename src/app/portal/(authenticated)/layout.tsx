@@ -17,7 +17,8 @@ const portalNav = [
 
 export default function PortalAuthLayout({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
-  const { data: session } = useSession();
+  const sessionResult = useSession();
+  const session = sessionResult?.data;
   const clientName = (session as unknown as Record<string, unknown>)?.clientName as string || 'Portal';
 
   return (
