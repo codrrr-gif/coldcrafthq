@@ -19,7 +19,7 @@ function LoginForm() {
     setError('')
     setLoading(true)
 
-    const result = await signIn('credentials', {
+    const result = await signIn('admin-credentials', {
       email,
       password,
       redirect: false,
@@ -39,7 +39,7 @@ function LoginForm() {
         <div className="text-center mb-8">
           <h1 className="font-display text-2xl text-text-primary">ColdCraft</h1>
           <span className="font-mono text-[10px] tracking-wider uppercase text-accent-primary bg-accent-glow px-2 py-0.5 rounded inline-block mt-2">
-            Reply Engine
+            GTM System
           </span>
         </div>
 

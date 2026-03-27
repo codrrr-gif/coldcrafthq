@@ -32,6 +32,7 @@ import {
 } from '@/lib/slack';
 import { markInterestedInCrm, logActivityToClose } from '@/lib/crm/close-sync';
 import { requireSecret } from '@/lib/auth/api-auth';
+import { insertActivity } from '@/lib/portal/activity';
 import type { ThreadMessage } from '@/lib/types';
 import type { SubCategory } from '@/lib/ai/playbooks';
 
@@ -238,6 +239,20 @@ export async function POST(req: NextRequest) {
       console.error('Failed to store reply:', insertError);
       return NextResponse.json({ error: 'Failed to store reply' }, { status: 500 });
     }
+
+    // Wire activity feed — look up client from pipeline
+    try {
+      const { data: pl } = await supabase
+        .from('pipeline_leads')
+        .select('client_id')
+        .eq('email', lead_email)
+        .not('client_id', 'is', null)
+        .limit(1)
+        .single();
+      if (pl?.client_id) {
+        insertActivity(pl.client_id, 'reply_received', `Reply from ${leadName || lead_email} — ${category}`, reply_text?.substring(0, 150)).catch(() => {});
+      }
+    } catch { /* no pipeline lead, skip activity */ }
 
     // Link the outcome_reply_id on the parent now that we have the new reply's ID
     if (parentReplyId && replyRecord) {

@@ -1,10 +1,13 @@
 // src/app/api/tam/coverage/route.ts
 import { NextResponse } from 'next/server';
 import { supabase } from '@/lib/supabase/client';
+import { requireSession } from '@/lib/auth/api-auth';
 
 export const dynamic = 'force-dynamic';
 
 export async function GET() {
+  const authErr = await requireSession();
+  if (authErr) return authErr;
   const [total, t1, t2, t3, contacted, replied, meeting] = await Promise.all([
     supabase.from('companies').select('*', { count: 'exact', head: true }),
     supabase.from('companies').select('*', { count: 'exact', head: true }).eq('tier', 1),

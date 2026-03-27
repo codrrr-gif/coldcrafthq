@@ -10,11 +10,15 @@
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.39.0",
+    "@react-email/components": "^1.0.10",
     "@supabase/supabase-js": "^2.49.0",
     "@vercel/analytics": "^2.0.1",
+    "@vercel/blob": "^2.3.1",
     "@vercel/speed-insights": "^2.0.0",
+    "bcryptjs": "^3.0.3",
     "claude-flow": "^3.5.42",
     "framer-motion": "^12.34.0",
+    "jsonwebtoken": "^9.0.3",
     "lucide-react": "^0.577.0",
     "mailchecker": "^6.0.20",
     "next": "14.2.35",
@@ -22,10 +26,16 @@
     "openai": "^4.80.0",
     "papaparse": "^5.5.3",
     "react": "^18",
-    "react-dom": "^18"
+    "react-dom": "^18",
+    "react-email": "^5.2.10",
+    "resend": "^6.9.4",
+    "stripe": "^21.0.1"
   },
   "devDependencies": {
     "@modelcontextprotocol/sdk": "^1.27.1",
+    "@playwright/test": "^1.58.2",
+    "@types/bcryptjs": "^2.4.6",
+    "@types/jsonwebtoken": "^9.0.10",
     "@types/node": "^20",
     "@types/papaparse": "^5.5.2",
     "@types/react": "^18",
