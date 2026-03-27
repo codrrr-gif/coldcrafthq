@@ -63,8 +63,8 @@ export default function BillingPage() {
       {data.invoices.length === 0 ? (
         <p className="text-text-secondary text-sm">No invoices yet.</p>
       ) : (
-        <div className="bg-bg-surface border border-border-subtle rounded-lg overflow-hidden">
-          <table className="w-full text-sm">
+        <div className="bg-bg-surface border border-border-subtle rounded-lg overflow-x-auto">
+          <table className="w-full text-sm min-w-[500px]">
             <thead>
               <tr className="border-b border-border-subtle">
                 <th className="text-left px-4 py-3 mono-label">Date</th>
@@ -77,7 +77,9 @@ export default function BillingPage() {
               {data.invoices.map((inv) => (
                 <tr key={inv.id} className="border-b border-border-subtle last:border-0">
                   <td className="px-4 py-3 text-text-secondary font-mono text-xs">
-                    {new Date(inv.created_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
+                    {inv.period_start
+                      ? `${new Date(inv.period_start).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })} – ${new Date(inv.period_end || inv.period_start).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}`
+                      : new Date(inv.created_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
                   </td>
                   <td className="px-4 py-3 text-text-primary">${(inv.amount / 100).toFixed(2)}</td>
                   <td className="px-4 py-3">

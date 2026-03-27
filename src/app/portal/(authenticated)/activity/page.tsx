@@ -53,7 +53,7 @@ export default function ActivityPage() {
     <div>
       <h1 className="font-display text-xl text-text-primary mb-6">Activity</h1>
 
-      <div className="flex gap-2 mb-6">
+      <div className="flex flex-wrap gap-2 mb-6">
         {typeFilters.map((f) => (
           <button
             key={f.value}

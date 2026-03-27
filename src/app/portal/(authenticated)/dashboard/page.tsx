@@ -48,7 +48,7 @@ export default function PortalDashboard() {
 
   if (loading) {
     return (
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+      <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-4">
         {Array.from({ length: 8 }).map((_, i) => (
           <div key={i} className="bg-bg-surface border border-border-subtle rounded-lg p-5 animate-pulse h-24" />
         ))}
@@ -67,7 +67,7 @@ export default function PortalDashboard() {
     <div>
       <h1 className="font-display text-xl text-text-primary mb-6">Campaign Performance</h1>
 
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+      <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-4">
         <MetricCard
           label="Meetings Booked"
           value={fmt(metrics.meetings_booked)}

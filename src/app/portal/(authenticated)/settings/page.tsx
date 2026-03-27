@@ -68,8 +68,8 @@ export default function SettingsPage() {
 
       <section>
         <h2 className="font-display text-lg text-text-primary mb-4">Team Members</h2>
-        <div className="bg-bg-surface border border-border-subtle rounded-lg overflow-hidden">
-          <table className="w-full text-sm">
+        <div className="bg-bg-surface border border-border-subtle rounded-lg overflow-x-auto">
+          <table className="w-full text-sm min-w-[500px]">
             <thead>
               <tr className="border-b border-border-subtle">
                 <th className="text-left px-4 py-3 mono-label">Name</th>

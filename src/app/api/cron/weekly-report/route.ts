@@ -28,14 +28,31 @@ export async function GET(req: NextRequest) {
     const results = [];
 
     for (const client of clients) {
+      const periodStart = weekAgo.toISOString().split('T')[0];
+      const periodEnd = now.toISOString().split('T')[0];
+
+      // Skip if report already exists for this period
+      const { count } = await supabase
+        .from('reports')
+        .select('id', { count: 'exact', head: true })
+        .eq('client_id', client.id)
+        .eq('type', 'weekly')
+        .eq('period_start', periodStart)
+        .eq('period_end', periodEnd);
+
+      if (count && count > 0) {
+        results.push({ client: client.name, skipped: true });
+        continue;
+      }
+
       const metrics = await gatherMetrics(client.id, weekAgo, now);
 
       // Store report
       await supabase.from('reports').insert({
         client_id: client.id,
         type: 'weekly',
-        period_start: weekAgo.toISOString().split('T')[0],
-        period_end: now.toISOString().split('T')[0],
+        period_start: periodStart,
+        period_end: periodEnd,
         metrics,
       });
 

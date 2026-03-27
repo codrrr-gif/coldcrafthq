@@ -29,14 +29,14 @@ export default function ReportsPage() {
           <div className="bg-bg-surface border border-border-subtle rounded-lg p-6">
             <h2 className="font-display text-lg text-text-primary mb-1">{selected.type === 'weekly' ? 'Weekly' : 'Monthly'} Report</h2>
             <p className="text-xs text-text-tertiary font-mono mb-6">{fmtDate(selected.period_start)} — {fmtDate(selected.period_end)}</p>
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+            <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-4">
               <div><p className="mono-label">Meetings Booked</p><p className="text-xl text-text-primary">{selected.metrics.meetings_booked}</p></div>
               <div><p className="mono-label">Reply Rate</p><p className="text-xl text-text-primary">{selected.metrics.reply_rate}%</p></div>
               <div><p className="mono-label">Leads Contacted</p><p className="text-xl text-text-primary">{selected.metrics.leads_contacted}</p></div>
-              <div><p className="mono-label">Cost Per Meeting</p><p className="text-xl text-text-primary">{selected.metrics.cost_per_meeting > 0 ? `$${(selected.metrics.cost_per_meeting / 100).toFixed(0)}` : '-'}</p></div>
+              <div><p className="mono-label">Cost Per Meeting</p><p className="text-xl text-text-primary">{selected.metrics.cost_per_meeting > 0 ? `$${selected.metrics.cost_per_meeting.toLocaleString()}` : '-'}</p></div>
               <div><p className="mono-label">Campaign Health</p><p className="text-xl text-text-primary">{selected.metrics.campaign_health}%</p></div>
               <div><p className="mono-label">AI Confidence</p><p className="text-xl text-text-primary">{selected.metrics.ai_confidence_avg}%</p></div>
-              <div><p className="mono-label">Pipeline Value</p><p className="text-xl text-text-primary">{selected.metrics.pipeline_value > 0 ? `$${(selected.metrics.pipeline_value / 100).toLocaleString()}` : '-'}</p></div>
+              <div><p className="mono-label">Pipeline Value</p><p className="text-xl text-text-primary">{selected.metrics.pipeline_value > 0 ? `$${selected.metrics.pipeline_value.toLocaleString()}` : '-'}</p></div>
             </div>
           </div>
         </div>
