@@ -15,7 +15,7 @@ export async function middleware(req: NextRequest) {
   }
 
   // Portal pages (except login) — requires portal role
-  if (pathname.startsWith('/portal') && !pathname.startsWith('/portal/login') && !pathname.startsWith('/portal/invite')) {
+  if (pathname.startsWith('/portal') && !pathname.startsWith('/portal/login') && !pathname.startsWith('/portal/invite') && !pathname.startsWith('/portal/impersonate')) {
     if (!token || !token.clientId) {
       return NextResponse.redirect(new URL('/portal/login', req.url));
     }

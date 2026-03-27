@@ -1,6 +1,7 @@
 import { NextAuthOptions } from 'next-auth';
 import CredentialsProvider from 'next-auth/providers/credentials';
 import { compare } from 'bcryptjs';
+import { verify } from 'jsonwebtoken';
 import { supabase } from '@/lib/supabase/client';
 
 export const authOptions: NextAuthOptions = {
@@ -80,6 +81,44 @@ export const authOptions: NextAuthOptions = {
           clientId: user.client_id,
           clientName: client?.name || '',
         };
+      },
+    }),
+    // Admin impersonation provider (JWT-based, no password)
+    CredentialsProvider({
+      id: 'portal-impersonate',
+      name: 'Portal Impersonate',
+      credentials: {
+        token: { label: 'Token', type: 'text' },
+      },
+      async authorize(credentials) {
+        const token = credentials?.token;
+        if (!token) return null;
+
+        const secret = process.env.NEXTAUTH_SECRET;
+        if (!secret) return null;
+
+        try {
+          const payload = verify(token, secret) as {
+            clientId: string;
+            clientName: string;
+            role: string;
+            impersonator: string;
+            purpose: string;
+          };
+
+          if (payload.purpose !== 'portal-impersonate') return null;
+
+          return {
+            id: payload.impersonator,
+            email: payload.impersonator,
+            name: 'Admin',
+            role: payload.role,
+            clientId: payload.clientId,
+            clientName: payload.clientName,
+          };
+        } catch {
+          return null;
+        }
       },
     }),
   ],

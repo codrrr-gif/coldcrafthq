@@ -14,6 +14,7 @@ const statusBadge: Record<string, { label: string; cls: string }> = {
 export default function ClientsPage() {
   const [clients, setClients] = useState<Client[]>([]);
   const [loading, setLoading] = useState(true);
+  const [impersonating, setImpersonating] = useState<string | null>(null);
 
   useEffect(() => {
     fetch('/api/admin/clients')
@@ -21,6 +22,25 @@ export default function ClientsPage() {
       .then((data) => { setClients(data.clients); setLoading(false); })
       .catch(() => setLoading(false));
   }, []);
+
+  const enterPortal = async (clientId: string) => {
+    setImpersonating(clientId);
+    try {
+      const res = await fetch('/api/admin/clients/impersonate', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ client_id: clientId }),
+      });
+      const data = await res.json();
+      if (data.url) {
+        window.open(data.url, '_blank');
+      }
+    } catch (err) {
+      console.error('Impersonation failed:', err);
+    } finally {
+      setImpersonating(null);
+    }
+  };
 
   const totalMRR = clients.filter((c) => c.status === 'active').reduce((sum, c) => sum + c.monthly_retainer, 0);
 
@@ -52,6 +72,7 @@ export default function ClientsPage() {
               <th className="text-left px-4 py-3 mono-label">Retainer</th>
               <th className="text-left px-4 py-3 mono-label">Billing Email</th>
               <th className="text-left px-4 py-3 mono-label">Created</th>
+              <th className="text-right px-4 py-3 mono-label">Portal</th>
             </tr>
           </thead>
           <tbody>
@@ -67,6 +88,15 @@ export default function ClientsPage() {
                 <td className="px-4 py-3 text-text-secondary">{c.billing_email}</td>
                 <td className="px-4 py-3 text-text-tertiary text-xs font-mono">
                   {new Date(c.created_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
+                </td>
+                <td className="px-4 py-3 text-right">
+                  <button
+                    onClick={() => enterPortal(c.id)}
+                    disabled={impersonating === c.id}
+                    className="text-xs px-3 py-1.5 bg-accent-primary/10 hover:bg-accent-primary/20 text-accent-primary border border-accent-primary/20 rounded-md transition-colors disabled:opacity-50"
+                  >
+                    {impersonating === c.id ? 'Opening...' : 'Enter Portal →'}
+                  </button>
                 </td>
               </tr>
             ))}
