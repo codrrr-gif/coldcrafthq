@@ -9,8 +9,7 @@ import { verifyEmail } from './pipeline';
 import { clearMemoryCache } from './cache';
 import type { VerificationResult } from './types';
 
-const CHUNK_SIZE = 10; // Emails per cron invocation
-const MAX_PROCESSING_MS = 50000; // Leave 10s buffer on 60s timeout
+const CHUNK_SIZE = 100; // Emails per invocation
 
 /**
  * Fire a webhook callback when a job completes.
@@ -94,29 +93,30 @@ export async function processVerificationJobs(): Promise<{
   }
 
   let processed = 0;
-  const startTime = Date.now();
+  const CONCURRENCY = 10;
 
-  for (const row of pending) {
-    // Check timeout
-    if (Date.now() - startTime > MAX_PROCESSING_MS) break;
-
-    try {
-      const result = await verifyEmail(row.email);
-      await storeResult(row.id, job.id, result);
-      processed++;
-    } catch (err) {
-      console.error(`Failed to verify ${row.email}:`, err);
-      // Mark as unknown so it doesn't block the job
-      await supabase
-        .from('verification_results')
-        .update({
-          verdict: 'unknown',
-          risk_level: 'high',
-          score: 1, // Non-zero so it won't be re-processed
-        })
-        .eq('id', row.id);
-      processed++;
-    }
+  // Process in parallel batches of CONCURRENCY
+  for (let i = 0; i < pending.length; i += CONCURRENCY) {
+    const batch = pending.slice(i, i + CONCURRENCY);
+    const results = await Promise.allSettled(
+      batch.map(async (row) => {
+        try {
+          const result = await verifyEmail(row.email);
+          await storeResult(row.id, job.id, result);
+        } catch (err) {
+          console.error(`Failed to verify ${row.email}:`, err);
+          await supabase
+            .from('verification_results')
+            .update({
+              verdict: 'unknown',
+              risk_level: 'high',
+              score: 1,
+            })
+            .eq('id', row.id);
+        }
+      })
+    );
+    processed += results.length;
   }
 
   // Update job counters
@@ -151,23 +151,38 @@ async function storeResult(
 }
 
 async function updateJobCounters(jobId: string): Promise<void> {
-  // Count results by verdict
-  const { data: counts } = await supabase
+  // Use exact counts instead of fetching all rows (Supabase caps at 1000)
+  const countByVerdict = async (verdict: string) => {
+    const { count } = await supabase
+      .from('verification_results')
+      .select('*', { count: 'exact', head: true })
+      .eq('job_id', jobId)
+      .eq('verdict', verdict);
+    return count ?? 0;
+  };
+
+  const [valid, invalid, risky, totalCount] = await Promise.all([
+    countByVerdict('valid'),
+    countByVerdict('invalid'),
+    countByVerdict('risky'),
+    supabase
+      .from('verification_results')
+      .select('*', { count: 'exact', head: true })
+      .eq('job_id', jobId)
+      .then(({ count }) => count ?? 0),
+  ]);
+
+  // Processed = anything that's no longer in initial state (score 0 + unknown)
+  const { count: unprocessedCount } = await supabase
     .from('verification_results')
-    .select('verdict, score')
+    .select('*', { count: 'exact', head: true })
     .eq('job_id', jobId)
-    .limit(50000);
+    .eq('verdict', 'unknown')
+    .eq('score', 0);
 
-  if (!counts) return;
-
-  const total = counts.length;
-  const processed = counts.filter((r) => r.score > 0 || r.verdict !== 'unknown').length;
-  const valid = counts.filter((r) => r.verdict === 'valid').length;
-  const invalid = counts.filter((r) => r.verdict === 'invalid').length;
-  const risky = counts.filter((r) => r.verdict === 'risky').length;
-  const unknown = counts.filter((r) => r.verdict === 'unknown' && r.score > 0).length;
-
-  const isComplete = processed >= total;
+  const processed = totalCount - (unprocessedCount ?? 0);
+  const unknown = processed - valid - invalid - risky;
+  const isComplete = processed >= totalCount;
 
   await supabase
     .from('verification_jobs')
@@ -176,7 +191,7 @@ async function updateJobCounters(jobId: string): Promise<void> {
       valid,
       invalid,
       risky,
-      unknown,
+      unknown: Math.max(0, unknown),
       ...(isComplete ? {
         status: 'completed',
         completed_at: new Date().toISOString(),

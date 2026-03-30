@@ -10,12 +10,19 @@
 
 import { NextRequest, NextResponse } from 'next/server';
 import { supabase } from '@/lib/supabase/client';
-import { parseCsvEmails } from '@/lib/verify/csv-parser';
-import { requireSecret } from '@/lib/auth/api-auth';
+import { parseCsvLeads, type CsvLead } from '@/lib/verify/csv-parser';
+import { requireSecret, requireSession } from '@/lib/auth/api-auth';
 
 export const dynamic = 'force-dynamic';
 
 const MAX_EMAILS_PER_JOB = 50000;
+
+// Accept either session auth (dashboard) or secret auth (cron/API)
+async function requireAuth(req: NextRequest): Promise<NextResponse | null> {
+  const authHeader = req.headers.get('authorization');
+  if (authHeader) return requireSecret(req);
+  return requireSession();
+}
 
 // SSRF protection: reject private/internal callback URLs
 function isUnsafeCallbackUrl(url: string): boolean {
@@ -47,18 +54,18 @@ function isUnsafeCallbackUrl(url: string): boolean {
 }
 
 export async function POST(req: NextRequest) {
-  const authErr = requireSecret(req);
+  const authErr = await requireAuth(req);
   if (authErr) return authErr;
 
   try {
-    let emails: string[] = [];
+    let leads: CsvLead[] = [];
     let filename: string | null = null;
     let callbackUrl: string | null = null;
 
     const contentType = req.headers.get('content-type') || '';
 
     if (contentType.includes('multipart/form-data')) {
-      // CSV file upload
+      // CSV file upload — extracts email + name/company/niche metadata
       const formData = await req.formData();
       const file = formData.get('file') as File | null;
       const emailColumn = (formData.get('email_column') as string) || 'email';
@@ -70,12 +77,17 @@ export async function POST(req: NextRequest) {
 
       filename = file.name;
       const text = await file.text();
-      emails = parseCsvEmails(text, emailColumn);
+      leads = parseCsvLeads(text, emailColumn);
     } else {
-      // JSON body
+      // JSON body — support both { emails: [] } and { leads: [] }
       const body = await req.json();
-      emails = body.emails || [];
+      if (body.leads) {
+        leads = body.leads;
+      } else if (body.emails) {
+        leads = body.emails.map((e: string) => ({ email: e }));
+      }
       callbackUrl = body.callback_url || null;
+      filename = body.source_filename || null;
     }
 
     // SSRF protection on callback URL
@@ -86,20 +98,24 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    if (!emails.length) {
+    if (!leads.length) {
       return NextResponse.json(
         { error: 'No emails provided' },
         { status: 400 }
       );
     }
 
-    // Deduplicate and normalize
-    const normalized = emails
-      .map((e: string) => e.trim().toLowerCase())
-      .filter((e: string) => e.length > 0 && e.includes('@'));
-    const uniqueEmails = Array.from(new Set(normalized));
+    // Deduplicate by email, keep first occurrence (preserves lead metadata)
+    const seen = new Set<string>();
+    const uniqueLeads = leads.filter((l) => {
+      const email = l.email?.trim().toLowerCase();
+      if (!email || !email.includes('@') || seen.has(email)) return false;
+      seen.add(email);
+      l.email = email;
+      return true;
+    });
 
-    if (uniqueEmails.length > MAX_EMAILS_PER_JOB) {
+    if (uniqueLeads.length > MAX_EMAILS_PER_JOB) {
       return NextResponse.json(
         { error: `Maximum ${MAX_EMAILS_PER_JOB} emails per job` },
         { status: 400 }
@@ -113,7 +129,7 @@ export async function POST(req: NextRequest) {
       .from('verification_jobs')
       .insert({
         status: 'pending',
-        total_emails: uniqueEmails.length,
+        total_emails: uniqueLeads.length,
         processed: 0,
         valid: 0,
         invalid: 0,
@@ -133,10 +149,14 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    // Insert placeholder results for each email
-    const resultRows = uniqueEmails.map((email: string) => ({
+    // Insert placeholder results for each lead (with metadata)
+    const resultRows = uniqueLeads.map((lead) => ({
       job_id: job.id,
-      email,
+      email: lead.email,
+      first_name: lead.first_name || null,
+      last_name: lead.last_name || null,
+      company_name: lead.company_name || null,
+      niche: lead.niche || null,
       verdict: 'unknown' as const,
       risk_level: 'medium' as const,
       score: 0,
@@ -165,8 +185,8 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({
       job_id: job.id,
       status: 'pending',
-      total_emails: uniqueEmails.length,
-      deduplicated_from: emails.length,
+      total_emails: uniqueLeads.length,
+      deduplicated_from: leads.length,
     }, { status: 201 });
   } catch (err) {
     console.error('Bulk verification error:', err);

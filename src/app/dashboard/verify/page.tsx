@@ -181,19 +181,124 @@ export default function VerifyPage() {
     if (mode === 'bulk') { loadJobs(); loadCampaigns(); }
   }, [mode, loadJobs, loadCampaigns]);
 
-  // --- CSV upload ---
+  // --- CSV upload (client-side parsing — dynamic column detection) ---
   const uploadCsv = useCallback(async (file: File) => {
     setUploading(true);
     setError(null);
     try {
-      const formData = new FormData();
-      formData.append('file', file);
-      const res = await fetch('/api/verify/bulk', { method: 'POST', body: formData });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error || 'Upload failed');
+      let text = await file.text();
+      // Strip BOM and normalize line endings
+      text = text.replace(/^\uFEFF/, '').replace(/\r\n?/g, '\n');
+      const lines = text.split('\n').filter(l => l.trim());
+      if (lines.length < 2) throw new Error('CSV file is empty');
+
+      // Parse a CSV row (handles quoted fields)
+      const parseRow = (line: string): string[] => {
+        const fields: string[] = [];
+        let current = '';
+        let inQuotes = false;
+        for (let i = 0; i < line.length; i++) {
+          const ch = line[i];
+          if (ch === '"') { inQuotes = !inQuotes; continue; }
+          if (ch === ',' && !inQuotes) { fields.push(current.trim()); current = ''; continue; }
+          current += ch;
+        }
+        fields.push(current.trim());
+        return fields;
+      };
+
+      const rawHeaders = parseRow(lines[0]);
+      const headers = rawHeaders.map(h => h.toLowerCase().trim());
+
+      // Dynamic email column detection: find any column where the header
+      // contains "email" (but not "email status", "email provider", etc.)
+      // or where the first data row value looks like an email
+      let emailIdx = headers.findIndex(h => /^e[\-_]?mail$/.test(h.replace(/\s+/g, '')));
+      if (emailIdx === -1) {
+        // Fallback: find header containing "email" but not compound terms
+        emailIdx = headers.findIndex(h => {
+          const clean = h.replace(/[\s_-]/g, '');
+          return clean === 'email' || clean === 'emailaddress' || clean === 'mail'
+            || clean === 'contactemail' || clean === 'workemail' || clean === 'primaryemail';
+        });
+      }
+      if (emailIdx === -1) {
+        // Last resort: find column where data looks like emails
+        const sampleRow = parseRow(lines[1]);
+        emailIdx = sampleRow.findIndex(v => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(v.trim()));
+      }
+      if (emailIdx === -1) throw new Error('No email column found — make sure your CSV has an "Email" column');
+
+      // Dynamic metadata detection: match by header containing keyword
+      const matchHeader = (keywords: string[], exclude: string[] = []) =>
+        headers.findIndex(h => {
+          const clean = h.replace(/[\s_-]/g, '');
+          if (exclude.some(ex => clean.includes(ex))) return false;
+          return keywords.some(k => clean === k || clean.startsWith(k));
+        });
+
+      const fnIdx = matchHeader(['firstname', 'first', 'fname']);
+      const lnIdx = matchHeader(['lastname', 'last', 'lname']);
+      const coIdx = matchHeader(['company', 'companyname', 'organization', 'org'], ['url', 'linkedin', 'twitter', 'facebook', 'website', 'domain', 'city', 'state', 'country']);
+      const nicheIdx = matchHeader(['industry', 'niche', 'sector', 'vertical', 'category', 'businesscategory'], ['sub']);
+
+      const leads: { email: string; first_name?: string; last_name?: string; company_name?: string; niche?: string }[] = [];
+      for (let i = 1; i < lines.length; i++) {
+        const fields = parseRow(lines[i]);
+        const email = fields[emailIdx]?.trim().toLowerCase();
+        if (!email || !email.includes('@')) continue;
+        leads.push({
+          email,
+          ...(fnIdx >= 0 && fields[fnIdx]?.trim() ? { first_name: fields[fnIdx].trim() } : {}),
+          ...(lnIdx >= 0 && fields[lnIdx]?.trim() ? { last_name: fields[lnIdx].trim() } : {}),
+          ...(coIdx >= 0 && fields[coIdx]?.trim() ? { company_name: fields[coIdx].trim() } : {}),
+          ...(nicheIdx >= 0 && fields[nicheIdx]?.trim() ? { niche: fields[nicheIdx].trim() } : {}),
+        });
+      }
+
+      if (!leads.length) throw new Error('No valid emails found in CSV');
+
+      // Send leads in chunks of 5000 to stay safely under Vercel's 4.5MB body limit
+      const CHUNK_SIZE = 5000;
+      if (leads.length <= CHUNK_SIZE) {
+        const jsonBody = JSON.stringify({ leads, source_filename: file.name });
+        const res = await fetch('/api/verify/bulk', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: jsonBody,
+        });
+        const resText = await res.text();
+        let data;
+        try { data = JSON.parse(resText); } catch {
+          throw new Error(`Server error (${res.status}): ${resText.slice(0, 300)}`);
+        }
+        if (!res.ok) throw new Error(data.error || 'Upload failed');
+      } else {
+        // Split into multiple jobs for very large files
+        for (let i = 0; i < leads.length; i += CHUNK_SIZE) {
+          const chunk = leads.slice(i, i + CHUNK_SIZE);
+          const part = Math.floor(i / CHUNK_SIZE) + 1;
+          const total = Math.ceil(leads.length / CHUNK_SIZE);
+          const jsonBody = JSON.stringify({
+            leads: chunk,
+            source_filename: `${file.name} (part ${part}/${total})`,
+          });
+          const res = await fetch('/api/verify/bulk', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: jsonBody,
+          });
+          const resText = await res.text();
+          let data;
+          try { data = JSON.parse(resText); } catch {
+            throw new Error(`Server error (${res.status}): ${resText.slice(0, 300)}`);
+          }
+          if (!res.ok) throw new Error(data.error || `Upload failed (part ${part})`);
+        }
+      }
       await loadJobs();
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Upload failed');
+      setError(err instanceof Error ? `${err.message}` : 'Upload failed');
     } finally {
       setUploading(false);
       if (fileInputRef.current) fileInputRef.current.value = '';
@@ -228,13 +333,10 @@ export default function VerifyPage() {
       return;
     }
 
-    // Client-driven processing: poll status + trigger chunk every 4s
+    // Poll status + trigger processing every 4s
     pollRef.current = setInterval(async () => {
       try {
-        // Trigger next chunk
         fetch('/api/verify/process', { method: 'POST' });
-
-        // Poll status
         const res = await fetch(`/api/verify/status/${job.id}`);
         const updated = await res.json();
         if (!res.ok) return;
@@ -412,7 +514,7 @@ export default function VerifyPage() {
             <input
               ref={fileInputRef}
               type="file"
-              accept=".csv"
+              accept=".csv,.tsv,.txt,text/csv,text/plain"
               onChange={(e) => e.target.files?.[0] && uploadCsv(e.target.files[0])}
               className="hidden"
             />
@@ -427,7 +529,7 @@ export default function VerifyPage() {
                   <span className="text-text-primary font-medium">Drop a CSV</span> or click to upload
                 </p>
                 <p className="text-xs text-text-tertiary mt-1">
-                  Needs an &ldquo;email&rdquo; column — up to 50,000 addresses per job
+                  Needs an &ldquo;Email&rdquo; column — any file size, parsed locally
                 </p>
               </>
             )}

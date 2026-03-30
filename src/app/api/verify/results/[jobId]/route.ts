@@ -36,7 +36,7 @@ export async function GET(
   if (format === 'csv') {
     let query = supabase
       .from('verification_results')
-      .select('email, verdict, risk_level, score, reason, recommendation, suggested_correction')
+      .select('first_name, last_name, email, company_name, niche, verdict, risk_level, score, reason, recommendation, suggested_correction')
       .eq('job_id', jobId)
       .order('verdict', { ascending: true })
       .limit(50000);

@@ -4,6 +4,10 @@
 
 interface ExportRow {
   email: string;
+  first_name: string | null;
+  last_name: string | null;
+  company_name: string | null;
+  niche: string | null;
   verdict: string;
   risk_level: string;
   score: number;
@@ -14,7 +18,11 @@ interface ExportRow {
 
 export function exportResultsToCsv(results: ExportRow[]): string {
   const headers = [
+    'first_name',
+    'last_name',
     'email',
+    'company_name',
+    'niche',
     'verdict',
     'risk_level',
     'score',
