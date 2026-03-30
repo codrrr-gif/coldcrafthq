@@ -32,24 +32,33 @@ export async function GET(
     return NextResponse.json({ error: 'Job not found' }, { status: 404 });
   }
 
-  // CSV export
+  // CSV export — paginate to bypass Supabase's 1000-row default cap
   if (format === 'csv') {
-    let query = supabase
-      .from('verification_results')
-      .select('first_name, last_name, email, company_name, niche, verdict, risk_level, score, reason, recommendation, suggested_correction')
-      .eq('job_id', jobId)
-      .order('verdict', { ascending: true })
-      .limit(50000);
+    const PAGE_SIZE = 1000;
+    const allResults: Record<string, unknown>[] = [];
+    let from = 0;
 
-    if (verdict) query = query.eq('verdict', verdict);
+    while (true) {
+      let query = supabase
+        .from('verification_results')
+        .select('first_name, last_name, email, company_name, niche, verdict, risk_level, score, reason, recommendation, suggested_correction')
+        .eq('job_id', jobId)
+        .order('email', { ascending: true })
+        .range(from, from + PAGE_SIZE - 1);
 
-    const { data: results, error } = await query;
+      if (verdict) query = query.eq('verdict', verdict);
 
-    if (error) {
-      return NextResponse.json({ error: error.message }, { status: 500 });
+      const { data, error } = await query;
+      if (error) {
+        return NextResponse.json({ error: error.message }, { status: 500 });
+      }
+      if (!data || data.length === 0) break;
+      allResults.push(...data);
+      if (data.length < PAGE_SIZE) break;
+      from += PAGE_SIZE;
     }
 
-    const csv = exportResultsToCsv(results || []);
+    const csv = exportResultsToCsv(allResults as never[]);
     return new NextResponse(csv, {
       headers: {
         'Content-Type': 'text/csv',
