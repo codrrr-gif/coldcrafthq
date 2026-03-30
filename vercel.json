@@ -8,6 +8,9 @@
     { "path": "/api/cron/verify5", "schedule": "* * * * *" },
     { "path": "/api/cron/weekly-report", "schedule": "0 13 * * 1" },
     { "path": "/api/cron/monthly-report", "schedule": "0 13 1 * *" },
-    { "path": "/api/cron/churn-detection", "schedule": "0 14 * * *" }
+    { "path": "/api/cron/churn-detection", "schedule": "0 14 * * *" },
+    { "path": "/api/pipeline/ingest", "schedule": "0 12 * * 1-5" },
+    { "path": "/api/pipeline/check",  "schedule": "0 13 * * 1-5" },
+    { "path": "/api/cron/auto-send",  "schedule": "0 14 * * 1-5" }
   ]
 }
