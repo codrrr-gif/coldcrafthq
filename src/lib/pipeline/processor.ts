@@ -157,8 +157,22 @@ export async function processPipelineLead(lead: PipelineLead): Promise<void> {
             .update({ total_leads: (activeExp.total_leads || 0) + 1 })
             .eq('id', activeExp.id),
         ]).catch(console.error);
+      } else {
+        // No active experiment — check for a completed one with a declared winner
+        const { data: completedExp } = await supabase
+          .from('ab_experiments')
+          .select('winner_campaign_id')
+          .eq('signal_type', signal_type)
+          .eq('status', 'completed')
+          .not('winner_campaign_id', 'is', null)
+          .limit(1)
+          .single();
+
+        if (completedExp?.winner_campaign_id) {
+          finalCampaignId = completedExp.winner_campaign_id;
+        }
       }
-    } catch {} // No active experiment — use default campaign
+    } catch {} // No experiment — use default campaign
 
     const pushResult = await addLeadsToCampaign(finalCampaignId, [{
       email: emailResult.email,
