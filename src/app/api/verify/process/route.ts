@@ -2,22 +2,31 @@
 // Verification Chunk Processor
 // ============================================
 // POST /api/verify/process
-// Body: { job_id: string }
-//
-// Called by the dashboard during polling — processes the next
-// chunk of emails for a job. No cron needed; the client drives
-// processing by calling this every few seconds while active.
+// Accepts session cookies (dashboard) or Bearer token (cron)
 
 import { NextRequest, NextResponse } from 'next/server';
+import { getServerSession } from 'next-auth';
+import { authOptions } from '@/lib/auth';
 import { processVerificationJobs } from '@/lib/verify/bulk-processor';
-import { requireSecret } from '@/lib/auth/api-auth';
 
 export const dynamic = 'force-dynamic';
 export const maxDuration = 60;
 
 export async function POST(req: NextRequest) {
-  const authErr = requireSecret(req);
-  if (authErr) return authErr;
+  // Check Bearer token first (cron/API calls)
+  const authHeader = req.headers.get('authorization');
+  if (authHeader) {
+    const secret = process.env.CRON_SECRET || process.env.WEBHOOK_SECRET;
+    if (!secret || authHeader !== `Bearer ${secret}`) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    }
+  } else {
+    // Check session (dashboard calls)
+    const session = await getServerSession(authOptions);
+    if (!session) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    }
+  }
 
   try {
     const result = await processVerificationJobs();
