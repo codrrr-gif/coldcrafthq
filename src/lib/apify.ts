@@ -111,8 +111,9 @@ export async function runCrunchbaseActivity(
   keywords: string[],
   limit = 200,
 ): Promise<{ runId: string; datasetId: string }> {
-  return runActor('curious_coder/crunchbase-companies-scraper', {
-    search: keywords.join(','),
+  const query = keywords.join('+');
+  return runActor('pratikdani/crunchbase-companies-scraper', {
+    url: `https://www.crunchbase.com/discover/organization.companies?query=${encodeURIComponent(query)}`,
     maxItems: limit,
   });
 }
@@ -121,7 +122,7 @@ export async function runCrunchbaseActivity(
 export async function runProductHuntSearch(
   limit = 50,
 ): Promise<{ runId: string; datasetId: string }> {
-  return runActor('misceres/producthunt-scraper', {
+  return runActor('maximedupre/product-hunt-scraper', {
     startUrls: [
       { url: 'https://www.producthunt.com/topics/saas' },
       { url: 'https://www.producthunt.com/topics/developer-tools' },
@@ -137,7 +138,7 @@ export async function runTwitterSearch(
   queries: string[],
   limit = 100,
 ): Promise<{ runId: string; datasetId: string }> {
-  return runActor('apidojo/twitter-search-scraper', {
+  return runActor('apidojo/tweet-scraper', {
     searchTerms: queries,
     maxTweets: limit,
     sort: 'Latest',
