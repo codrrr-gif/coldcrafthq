@@ -92,17 +92,17 @@ export async function runGoogleSearch(
   });
 }
 
-// Run actor for LinkedIn Jobs Scraper
+// Run actor for LinkedIn Jobs Scraper (free actor, URL-based)
 export async function runLinkedInJobsSearch(
   keywords: string[],
   location = 'United States',
   limit = 50,
 ): Promise<{ runId: string; datasetId: string }> {
-  return runActor('bebity/linkedin-jobs-scraper', {
-    title: keywords.join(' OR '),
-    location,
+  const query = keywords.join(' OR ');
+  const url = `https://www.linkedin.com/jobs/search/?keywords=${encodeURIComponent(query)}&location=${encodeURIComponent(location)}&f_TPR=r86400`;
+  return runActor('curious_coder/linkedin-jobs-scraper', {
+    urls: [url],
     rows: limit,
-    publishedAt: 'r86400', // last 24 hours
   });
 }
 
