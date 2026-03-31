@@ -85,7 +85,7 @@ export async function runGoogleSearch(
     resultsPerPage: resultsPerQuery,
     mobileResults: false,
     languageCode: 'en',
-    countryCode: 'US',
+    countryCode: 'us',
     includeUnfilteredResults: false,
     saveHtml: false,
     saveHtmlToKeyValueStore: false,
