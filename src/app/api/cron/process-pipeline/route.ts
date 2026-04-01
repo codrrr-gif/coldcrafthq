@@ -16,7 +16,7 @@ import { checkDailyLimits } from '@/lib/pipeline/circuit-breaker';
 export const dynamic = 'force-dynamic';
 export const maxDuration = 300; // 5 min max — matches cron interval
 
-const BATCH_SIZE = 2; // Keep small — contact finder waterfall is slow
+const BATCH_SIZE = 5; // Perplexity contact finder is fast (<2s), no more Apify polling
 
 export async function GET(req: NextRequest) {
   const authErr = requireSecret(req);

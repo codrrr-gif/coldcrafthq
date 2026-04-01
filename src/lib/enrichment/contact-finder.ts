@@ -83,9 +83,9 @@ export async function findDecisionMaker(
   if (contact) return contact;
   if (Date.now() > deadline) return null;
 
-  // Level 2: Company website team/about page
-  const contactFromSite = await findViaCompanyWebsite(companyDomain);
-  if (contactFromSite) return contactFromSite;
+  // Level 2: DISABLED — Cheerio scraper returns garbage (page copy as names)
+  // const contactFromSite = await findViaCompanyWebsite(companyDomain);
+  // if (contactFromSite) return contactFromSite;
   if (Date.now() > deadline) return null;
 
   // Level 3: Broad Google search (no site: restriction)
