@@ -163,7 +163,7 @@ export async function processReferral(params: {
     }]);
   }
 
-  // Record in pipeline_leads
+  // Record in pipeline_leads (referral source tracked in signal_summary)
   await supabase.from('pipeline_leads').insert({
     email,
     first_name: (referral.name || '').split(/\s+/)[0] || null,
@@ -176,7 +176,6 @@ export async function processReferral(params: {
     status: campaignId ? 'pushed' : 'pending',
     instantly_campaign_id: campaignId || null,
     pushed_at: campaignId ? new Date().toISOString() : null,
-    referral_source_email: sourceLeadEmail,
     client_id: '00000000-0000-0000-0000-000000000001',
   });
 

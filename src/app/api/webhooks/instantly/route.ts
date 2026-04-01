@@ -329,7 +329,10 @@ export async function POST(req: NextRequest) {
     }
 
     // Step 5.6: Auto-process referrals — extract referred person, push to pipeline
-    if (subCategory === 'interested.referral' || subCategory === 'custom.forwarded') {
+    // Also check OOO replies — people often say "email X while I'm away"
+    const hasEmailInReply = /[\w.+-]+@[\w-]+\.[\w.-]+/.test(reply_text || '');
+    if (subCategory === 'interested.referral' || subCategory === 'custom.forwarded' ||
+        (subCategory === 'custom.ooo' && hasEmailInReply)) {
       try {
         const referral = extractReferral(reply_text, leadCompany || null);
         if (referral) {

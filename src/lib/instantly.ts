@@ -120,18 +120,32 @@ export async function deleteLead(
 }
 
 // Add email to blocklist
+// Note: Instantly v2 removed the /blocklist endpoint.
+// We try both v2 and v1 patterns, and log a warning if neither works.
+// The critical action is deleteLead — blocklist is a secondary safeguard.
 export async function blockEmail(email: string): Promise<void> {
-  const res = await fetch(`${API_BASE}/blocklist`, {
-    method: 'POST',
-    headers: headers(email),
-    body: JSON.stringify({ email }),
-    signal: AbortSignal.timeout(15000),
-  });
+  const endpoints = [
+    { url: `${API_BASE}/blocklist`, body: { email } },
+    { url: `${API_BASE}/block-list-entries`, body: { entries: [email], entry_type: 'email' } },
+  ];
 
-  if (!res.ok) {
-    const text = await res.text();
-    throw new Error(`Instantly blockEmail failed: ${res.status} ${text}`);
+  for (const ep of endpoints) {
+    try {
+      const res = await fetch(ep.url, {
+        method: 'POST',
+        headers: headers(email),
+        body: JSON.stringify(ep.body),
+        signal: AbortSignal.timeout(10000),
+      });
+      if (res.ok) return;
+    } catch {
+      // Try next endpoint
+    }
   }
+
+  // Neither endpoint worked — log but don't throw.
+  // The lead is already deleted from the campaign which is the critical action.
+  console.warn(`[instantly] blockEmail: no working blocklist endpoint for ${email}. Lead was deleted from campaign but not blocklisted.`);
 }
 
 // List all campaigns in the workspace
@@ -159,11 +173,16 @@ export async function getCampaigns(): Promise<{ id: string; name: string; status
 // Extra top-level fields are passed through as Instantly custom variables
 // (e.g. personalized_opener, signal_summary, title) and referenced in
 // campaign templates as {{personalized_opener}} etc.
+// NOTE: v2 endpoint is /leads/add, custom fields go in custom_variables object.
+const STANDARD_LEAD_FIELDS = new Set([
+  'email', 'first_name', 'last_name', 'company_name',
+  'phone', 'website', 'personalization',
+]);
+
 export async function addLeadsToCampaign(
   campaignId: string,
   leads: { email: string; first_name?: string; last_name?: string; company_name?: string; [key: string]: string | undefined }[]
 ): Promise<{ added: number; skipped: number; error?: string }> {
-  // Instantly recommends batches of 1000
   const BATCH_SIZE = 1000;
   let totalAdded = 0;
   let totalSkipped = 0;
@@ -171,16 +190,34 @@ export async function addLeadsToCampaign(
   for (let i = 0; i < leads.length; i += BATCH_SIZE) {
     const batch = leads.slice(i, i + BATCH_SIZE);
 
-    const res = await fetch(`${API_BASE}/leads`, {
+    // Separate standard fields from custom variables for v2 API
+    const formattedLeads = batch.map(lead => {
+      const standard: Record<string, string | undefined> = {};
+      const customVars: Record<string, string> = {};
+      for (const [key, value] of Object.entries(lead)) {
+        if (value === undefined) continue;
+        if (STANDARD_LEAD_FIELDS.has(key)) {
+          standard[key] = value;
+        } else {
+          customVars[key] = value;
+        }
+      }
+      return {
+        ...standard,
+        ...(Object.keys(customVars).length ? { custom_variables: customVars } : {}),
+      };
+    });
+
+    const res = await fetch(`${API_BASE}/leads/add`, {
       method: 'POST',
       headers: headers(),
       body: JSON.stringify({
         campaign_id: campaignId,
-        leads: batch,
+        leads: formattedLeads,
         skip_if_in_workspace: false,
         skip_if_in_campaign: true,
       }),
-      signal: AbortSignal.timeout(15000),
+      signal: AbortSignal.timeout(30000),
     });
 
     if (!res.ok) {
@@ -189,8 +226,8 @@ export async function addLeadsToCampaign(
     }
 
     const data = await res.json();
-    totalAdded += data.total_new_leads ?? batch.length;
-    totalSkipped += data.total_duplicate_leads ?? 0;
+    totalAdded += data.leads_uploaded ?? batch.length;
+    totalSkipped += data.skipped_count ?? 0;
   }
 
   return { added: totalAdded, skipped: totalSkipped };
@@ -210,6 +247,20 @@ export async function getLeadLabels(): Promise<{ id: string; name: string }[]> {
 
   const data = await res.json();
   return data.data || data || [];
+}
+
+export async function pauseCampaign(campaignId: string): Promise<boolean> {
+  try {
+    const res = await fetch(`${API_BASE}/campaigns/${campaignId}/pause`, {
+      method: 'POST',
+      headers: headers(campaignId),
+      signal: AbortSignal.timeout(15000),
+    });
+    return res.ok;
+  } catch (err) {
+    console.error(`[instantly] Failed to pause campaign ${campaignId}:`, err);
+    return false;
+  }
 }
 
 export async function listSendingAccounts(): Promise<Array<{ email: string; daily_limit?: number }>> {
