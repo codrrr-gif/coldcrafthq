@@ -61,7 +61,7 @@ async function searchPerplexity(query: string): Promise<string> {
     body: JSON.stringify({
       model: 'sonar-pro',
       messages: [{ role: 'user', content: query }],
-      max_tokens: 400,
+      max_tokens: 1000,
     }),
     signal: AbortSignal.timeout(30000),
   });
@@ -85,18 +85,22 @@ export async function researchLead(params: {
   // Fetch proven opener patterns (non-blocking — if it fails, we proceed without)
   const openerExamples = await getOpenerExamples(signalType).catch(() => '');
 
-  // 3 parallel Perplexity searches
-  const [companyResearch, signalContext, contactResearch] = await Promise.all([
-    searchPerplexity(
-      `${companyName} (${domain}): what do they do, who are their customers, how many employees, what's their tech stack, are they B2B SaaS?`
-    ),
-    searchPerplexity(
-      `${companyName} ${signalSummary}. ${SIGNAL_RESEARCH_PROMPTS[signalType]}`
-    ),
-    searchPerplexity(
-      `${firstName} ${lastName} ${title} at ${companyName}: background, previous companies, what have they built before, LinkedIn activity`
-    ),
-  ]);
+  // Single batched Perplexity search (saves 2 API calls per lead)
+  const batchedQuery = `Research for cold email outreach to ${firstName} ${lastName}, ${title} at ${companyName} (${domain}).
+
+Answer ALL of these in order, separated by "---":
+
+1. COMPANY: What does ${companyName} do? Who are their customers? How many employees? What's their tech stack? Are they B2B SaaS?
+
+2. SIGNAL: ${signalSummary}. ${SIGNAL_RESEARCH_PROMPTS[signalType]}
+
+3. CONTACT: ${firstName} ${lastName} ${title} at ${companyName}: background, previous companies, what have they built before, LinkedIn activity`;
+
+  const batchedResult = await searchPerplexity(batchedQuery);
+  const sections = batchedResult.split(/---+/);
+  const companyResearch = sections[0]?.trim() || batchedResult;
+  const signalContext = sections[1]?.trim() || '';
+  const contactResearch = sections[2]?.trim() || '';
 
   // Claude synthesizes a personalized opener
   const synthesis = await client.messages.create({

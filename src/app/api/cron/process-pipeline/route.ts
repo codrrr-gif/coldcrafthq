@@ -44,15 +44,17 @@ export async function GET(req: NextRequest) {
       return NextResponse.json({ status: 'idle', processed: 0 });
     }
 
+    // Process leads concurrently — each lead is independent
+    const results = await Promise.allSettled(
+      leads.map((lead) => processPipelineLead(lead))
+    );
+
     let processed = 0;
     let failed = 0;
-
-    for (const lead of leads) {
-      try {
-        await processPipelineLead(lead);
-        processed++;
-      } catch (err) {
-        console.error(`[process-pipeline] Failed lead ${lead.id}:`, err);
+    for (const r of results) {
+      if (r.status === 'fulfilled') processed++;
+      else {
+        console.error(`[process-pipeline] Lead failed:`, r.reason);
         failed++;
       }
     }

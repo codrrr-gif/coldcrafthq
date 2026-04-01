@@ -31,6 +31,7 @@ import {
   notifyLegalThreat,
 } from '@/lib/slack';
 import { markInterestedInCrm, logActivityToClose } from '@/lib/crm/close-sync';
+import { recordReplyFeedback } from '@/lib/pipeline/signal-scoring-feedback';
 import { requireSecret } from '@/lib/auth/api-auth';
 import { insertActivity } from '@/lib/portal/activity';
 import { getPlaybook } from '@/lib/ai/playbooks';
@@ -383,6 +384,9 @@ export async function POST(req: NextRequest) {
         console.error('[webhook] Referral extraction failed:', err);
       }
     }
+
+    // Signal performance feedback loop — track which signals produce replies
+    recordReplyFeedback(lead_email, category).catch(console.error);
 
     // Sync interested reply to Close CRM (fire-and-forget)
     if (category === 'interested') {

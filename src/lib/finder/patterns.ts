@@ -22,6 +22,47 @@ export async function getCachedPattern(domain: string): Promise<{
   return { pattern: data.pattern, confidence: data.confidence };
 }
 
+// Bulk-learn patterns from already-pushed leads (run periodically or on-demand)
+export async function seedPatternsFromPushedLeads(): Promise<number> {
+  const { data: leads } = await supabase
+    .from('pipeline_leads')
+    .select('email, first_name, last_name')
+    .eq('status', 'pushed')
+    .not('email', 'is', null)
+    .not('first_name', 'is', null)
+    .not('last_name', 'is', null);
+
+  if (!leads?.length) return 0;
+
+  let seeded = 0;
+  for (const lead of leads) {
+    const domain = lead.email.split('@')[1];
+    if (!domain) continue;
+
+    // Only seed if no pattern exists yet
+    const existing = await supabase
+      .from('domain_patterns')
+      .select('id')
+      .eq('domain', domain)
+      .maybeSingle();
+
+    if (existing?.data) continue;
+
+    const pattern = detectPattern(lead.email, lead.first_name, lead.last_name);
+    if (!pattern) continue;
+
+    await supabase.from('domain_patterns').insert({
+      domain,
+      pattern,
+      confidence: 70,
+      sample_count: 1,
+      last_verified_at: new Date().toISOString(),
+    });
+    seeded++;
+  }
+  return seeded;
+}
+
 // Record a successfully verified email — updates pattern confidence
 export async function updateDomainPattern(
   email: string,

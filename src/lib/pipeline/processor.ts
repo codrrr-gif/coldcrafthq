@@ -6,7 +6,7 @@
 // ============================================
 
 import { supabase } from '@/lib/supabase/client';
-import { findDecisionMaker } from '@/lib/enrichment/contact-finder';
+import { findDecisionMaker, type Contact } from '@/lib/enrichment/contact-finder';
 import { findEmail } from '@/lib/finder';
 import { researchLead } from '@/lib/enrichment/research-agents';
 import { getCampaignId } from '@/lib/enrichment/campaign-mapper';
@@ -15,6 +15,58 @@ import type { PipelineLead } from '@/lib/gtm/types';
 import { addToWatchlist } from '@/lib/champions/watchlist';
 import { syncLeadToCrm, logActivityToClose } from '@/lib/crm/close-sync';
 import { calculateCompositeScore } from '@/lib/pipeline/composite-scorer';
+
+// Fallback contact finder for job posting signals.
+// If standard contact finder fails, use the job posting headline to ask
+// Perplexity for the hiring manager or their boss.
+async function findContactFromJobSignal(
+  companyName: string,
+  companyDomain: string,
+  signalSummary: string,
+): Promise<Contact | null> {
+  const apiKey = process.env.PERPLEXITY_API_KEY;
+  if (!apiKey) return null;
+
+  try {
+    const res = await fetch('https://api.perplexity.ai/chat/completions', {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${apiKey}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        model: 'sonar-pro',
+        messages: [{
+          role: 'user',
+          content: `${companyName} (${companyDomain}) posted this job: "${signalSummary}".
+Who is most likely the hiring manager for this role? If you can't find the hiring manager, who is the CEO or founder?
+Return ONLY JSON: {"first_name": "...", "last_name": "...", "title": "..."}
+If you cannot find anyone real, return {"first_name": null}`,
+        }],
+        max_tokens: 150,
+      }),
+      signal: AbortSignal.timeout(15000),
+    });
+
+    if (!res.ok) return null;
+    const data = await res.json();
+    const text: string = data.choices?.[0]?.message?.content || '';
+    const match = text.match(/\{[\s\S]*?\}/);
+    if (!match) return null;
+    const parsed = JSON.parse(match[0]);
+    if (!parsed.first_name || !parsed.last_name) return null;
+
+    return {
+      first_name: parsed.first_name.trim(),
+      last_name: parsed.last_name.trim(),
+      title: String(parsed.title || '').trim(),
+      linkedin_url: null,
+      source: 'job_posting_fallback',
+    };
+  } catch {
+    return null;
+  }
+}
 
 async function updateLead(id: string, updates: Partial<PipelineLead>) {
   await supabase
@@ -33,11 +85,17 @@ export async function processPipelineLead(lead: PipelineLead): Promise<void> {
       contact = { first_name: lead.first_name, last_name: lead.last_name, title: lead.title || '', linkedin_url: lead.linkedin_url || null };
     } else {
       await updateLead(id, { status: 'finding_contact' });
-      const found = await findDecisionMaker(company_name || '', company_domain);
+      let found = await findDecisionMaker(company_name || '', company_domain);
 
       if (!found) {
-        await updateLead(id, { status: 'failed', failure_reason: 'no_contact_found' });
-        return;
+        // Fallback: for job postings, try Perplexity with the specific role from the signal
+        if (signal_type === 'job_posting' && signal_summary) {
+          found = await findContactFromJobSignal(company_name || '', company_domain, signal_summary);
+        }
+        if (!found) {
+          await updateLead(id, { status: 'failed', failure_reason: 'no_contact_found' });
+          return;
+        }
       }
 
       contact = found;

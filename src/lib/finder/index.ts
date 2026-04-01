@@ -13,7 +13,42 @@ import { getCachedPattern, updateDomainPattern } from './patterns';
 import { verifyEmail } from '@/lib/verify/pipeline';
 import type { FinderResult } from '@/lib/gtm/types';
 
-// Step 0: FindyMail lookup — finds email by name + domain directly (when key is set)
+// Step 0b: Hunter.io lookup — finds email by name + domain (fallback to FindyMail)
+async function findEmailWithHunter(
+  firstName: string,
+  lastName: string,
+  domain: string,
+): Promise<string | null> {
+  const apiKey = process.env.HUNTER_API_KEY;
+  if (!apiKey) return null;
+
+  try {
+    const params = new URLSearchParams({
+      domain,
+      first_name: firstName,
+      last_name: lastName,
+      api_key: apiKey,
+    });
+    const res = await fetch(`https://api.hunter.io/v2/email-finder?${params}`, {
+      signal: AbortSignal.timeout(10000),
+    });
+
+    if (!res.ok) return null;
+
+    const data = await res.json();
+    const email: string | undefined = data?.data?.email;
+    const score: number = data?.data?.score ?? 0;
+
+    // Hunter returns a confidence score 0-100; only trust >= 60
+    if (email && score >= 60) return email.toLowerCase();
+  } catch {
+    // Network error or timeout — fall through
+  }
+
+  return null;
+}
+
+// Step 0a: FindyMail lookup — finds email by name + domain directly (when key is set)
 async function findEmailWithFindyMail(
   firstName: string,
   lastName: string,
@@ -75,6 +110,30 @@ export async function findEmail(
         score: result.score,
         tried_patterns: triedPatterns,
       };
+    }
+  }
+
+  // Step 0b: Hunter.io fallback — try if FindyMail missed or unavailable
+  if (!findymailEmail) {
+    const hunterEmail = await findEmailWithHunter(firstName, lastName, domain);
+    if (hunterEmail) {
+      triedPatterns.push(hunterEmail);
+      const result = await verifyEmail(hunterEmail, {
+        use_million_verifier: false,
+        use_findymail: false,
+      });
+      if (result.verdict === 'valid' || result.verdict === 'risky') {
+        await updateDomainPattern(hunterEmail, firstName, lastName);
+        return {
+          email: hunterEmail,
+          found: true,
+          pattern: null,
+          found_via: 'hunter',
+          verdict: result.verdict,
+          score: result.score,
+          tried_patterns: triedPatterns,
+        };
+      }
     }
   }
 
