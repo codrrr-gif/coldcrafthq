@@ -23,7 +23,7 @@ async function findEmailWithFindyMail(
   if (!apiKey) return null;
 
   try {
-    const res = await fetch('https://app.findymail.com/api/search', {
+    const res = await fetch('https://app.findymail.com/api/search/name', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -36,13 +36,10 @@ async function findEmailWithFindyMail(
     if (!res.ok) return null;
 
     const data = await res.json();
-    // FindyMail returns { contact: { email, confidence, ... } } or { email, ... }
     const email: string | undefined =
       data?.contact?.email || data?.email || undefined;
-    const confidence: number =
-      data?.contact?.confidence ?? data?.confidence ?? 0;
 
-    if (email && confidence >= 70) return email.toLowerCase();
+    if (email) return email.toLowerCase();
   } catch {
     // Network error or timeout — fall through to SMTP
   }
