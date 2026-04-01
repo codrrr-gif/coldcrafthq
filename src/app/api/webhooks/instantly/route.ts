@@ -180,6 +180,30 @@ export async function POST(req: NextRequest) {
         status = 'pending'; // Fall back to human review
       }
     } else if (category === 'interested' || category === 'soft_no' || category === 'custom') {
+      // === OOO: Remove from campaign (no point emailing someone on leave) ===
+      if (subCategory === 'custom.ooo') {
+        try {
+          let deleteCampaignId = campaign_id;
+          if (!deleteCampaignId) {
+            const { data: pl } = await supabase
+              .from('pipeline_leads')
+              .select('instantly_campaign_id')
+              .eq('email', lead_email)
+              .not('instantly_campaign_id', 'is', null)
+              .limit(1)
+              .maybeSingle();
+            deleteCampaignId = pl?.instantly_campaign_id || null;
+          }
+          if (deleteCampaignId) {
+            await deleteLead(deleteCampaignId, lead_email);
+          }
+          await tagLead(lead_email, 'OOO');
+          status = 'skipped';
+        } catch (err) {
+          console.error('Failed to handle OOO:', err);
+        }
+      }
+
       // === Tag the lead in Instantly ===
       const tagMap: Record<string, string> = {
         interested: 'Interested',
@@ -187,7 +211,9 @@ export async function POST(req: NextRequest) {
         custom: 'Custom',
       };
       try {
-        await tagLead(lead_email, tagMap[category] || 'Custom');
+        if (subCategory !== 'custom.ooo') {
+          await tagLead(lead_email, tagMap[category] || 'Custom');
+        }
       } catch (err) {
         console.error('Failed to tag lead:', err);
       }
