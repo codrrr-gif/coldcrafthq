@@ -73,7 +73,12 @@ export async function findDecisionMaker(
   // Hard cap: 120s total for all levels — prevents one lead from eating the function budget
   const deadline = Date.now() + 120_000;
 
-  // Level 1: LinkedIn via Google (primary — fast and reliable)
+  // Level 0: Perplexity AI search (fastest, most reliable — single API call, no polling)
+  const perplexityContact = await findViaPerplexity(companyName, companyDomain);
+  if (perplexityContact) return perplexityContact;
+  if (Date.now() > deadline) return null;
+
+  // Level 1: LinkedIn via Google (Apify fallback)
   const contact = await findViaLinkedInSearch(companyName, companyDomain);
   if (contact) return contact;
   if (Date.now() > deadline) return null;
@@ -85,6 +90,71 @@ export async function findDecisionMaker(
 
   // Level 3: Broad Google search (no site: restriction)
   return findViaBroadSearch(companyName, companyDomain);
+}
+
+// ── Level 0: Perplexity AI search ─────────────────────────────────────────────
+
+async function findViaPerplexity(
+  companyName: string,
+  companyDomain: string,
+): Promise<Contact | null> {
+  const apiKey = process.env.PERPLEXITY_API_KEY;
+  if (!apiKey) return null;
+
+  try {
+    const res = await fetch('https://api.perplexity.ai/chat/completions', {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${apiKey}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        model: 'sonar-pro',
+        messages: [{
+          role: 'user',
+          content: `Who is the head of sales, growth, or marketing at ${companyName} (${companyDomain})? If no sales/marketing leader, who is the CEO, founder, or owner?
+
+Return ONLY a JSON object: {"first_name": "...", "last_name": "...", "title": "...", "linkedin_url": "..."}
+
+Rules:
+- Return the most senior sales/marketing person. If none found, return the CEO/founder/owner.
+- linkedin_url should be their LinkedIn profile URL if known, or null.
+- If you cannot find anyone, return {"first_name": null}
+- Do NOT make up names. Only return real, verifiable people.`,
+        }],
+        max_tokens: 150,
+      }),
+      signal: AbortSignal.timeout(15000),
+    });
+
+    if (!res.ok) return null;
+
+    const data = await res.json();
+    const text: string = data.choices?.[0]?.message?.content || '';
+
+    const jsonMatch = text.match(/\{[\s\S]*?\}/);
+    if (!jsonMatch) return null;
+
+    const parsed = JSON.parse(jsonMatch[0]);
+    if (!parsed.first_name || !parsed.last_name) return null;
+
+    // Validate title matches ICP
+    const title = String(parsed.title || '');
+    if (!title) return null;
+
+    return {
+      first_name: parsed.first_name.trim(),
+      last_name: parsed.last_name.trim(),
+      title: title.trim(),
+      linkedin_url: parsed.linkedin_url && String(parsed.linkedin_url).includes('linkedin.com')
+        ? parsed.linkedin_url
+        : null,
+      source: 'perplexity',
+    };
+  } catch (err) {
+    console.error('[contact-finder] Perplexity search failed:', err);
+    return null;
+  }
 }
 
 async function findViaLinkedInSearch(
