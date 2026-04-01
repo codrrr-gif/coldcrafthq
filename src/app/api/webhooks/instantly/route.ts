@@ -33,6 +33,8 @@ import {
 import { markInterestedInCrm, logActivityToClose } from '@/lib/crm/close-sync';
 import { requireSecret } from '@/lib/auth/api-auth';
 import { insertActivity } from '@/lib/portal/activity';
+import { getPlaybook } from '@/lib/ai/playbooks';
+import { scheduleFollowUp } from '@/lib/followups/scheduler';
 import type { ThreadMessage } from '@/lib/types';
 import type { SubCategory } from '@/lib/ai/playbooks';
 
@@ -198,6 +200,19 @@ export async function POST(req: NextRequest) {
     // Step 4: Store in database
     const responseTime = Date.now() - startTime;
 
+    // Resolve client_id from pipeline_leads, fallback to internal client
+    let clientId = '00000000-0000-0000-0000-000000000001';
+    try {
+      const { data: pl } = await supabase
+        .from('pipeline_leads')
+        .select('client_id')
+        .eq('email', lead_email)
+        .not('client_id', 'is', null)
+        .limit(1)
+        .single();
+      if (pl?.client_id) clientId = pl.client_id;
+    } catch {}
+
     const { data: replyRecord, error: insertError } = await supabase
       .from('replies')
       .insert({
@@ -231,6 +246,7 @@ export async function POST(req: NextRequest) {
         auto_send_reason: null,
         parent_reply_id: parentReplyId,
         message_hash: messageHash,
+        client_id: clientId,
       })
       .select('id')
       .single();
@@ -240,19 +256,10 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'Failed to store reply' }, { status: 500 });
     }
 
-    // Wire activity feed — look up client from pipeline
-    try {
-      const { data: pl } = await supabase
-        .from('pipeline_leads')
-        .select('client_id')
-        .eq('email', lead_email)
-        .not('client_id', 'is', null)
-        .limit(1)
-        .single();
-      if (pl?.client_id) {
-        insertActivity(pl.client_id, 'reply_received', `Reply from ${leadName || lead_email} — ${category}`, reply_text?.substring(0, 150)).catch(() => {});
-      }
-    } catch { /* no pipeline lead, skip activity */ }
+    // Wire activity feed
+    if (clientId !== '00000000-0000-0000-0000-000000000001') {
+      insertActivity(clientId, 'reply_received', `Reply from ${leadName || lead_email} — ${category}`, reply_text?.substring(0, 150)).catch(() => {});
+    }
 
     // Link the outcome_reply_id on the parent now that we have the new reply's ID
     if (parentReplyId && replyRecord) {
@@ -281,6 +288,25 @@ export async function POST(req: NextRequest) {
           autoSendReason = 'high_confidence';
           status = 'sent';
         }
+      }
+    }
+
+    // Step 5.5: Schedule follow-up if playbook defines one
+    if (replyRecord && subCategory) {
+      try {
+        const playbook = getPlaybook(subCategory as SubCategory);
+        if (playbook.follow_up_action && !playbook.follow_up_action.startsWith('blocklist')) {
+          scheduleFollowUp({
+            leadEmail: lead_email,
+            leadId: lead_id || null,
+            replyId: replyRecord.id,
+            action: playbook.follow_up_action,
+            campaignId: campaign_id || null,
+            oooReturnDate: subCategory === 'custom.ooo' ? extractOooDate(reply_text) : null,
+          }).catch(console.error);
+        }
+      } catch (err) {
+        console.error('[webhook] Follow-up scheduling failed:', err);
       }
     }
 
@@ -357,6 +383,23 @@ export async function POST(req: NextRequest) {
     console.error('Webhook processing error:', err);
     return NextResponse.json({ error: 'Internal server error' }, { status: 500 });
   }
+}
+
+/** Try to extract a return date from OOO auto-replies */
+function extractOooDate(text: string): string | null {
+  // Match common patterns: "back on March 15", "returning Jan 5, 2026", "return 3/15"
+  const patterns = [
+    /(?:back|return(?:ing)?)\s+(?:on\s+)?(\w+ \d{1,2}(?:,?\s*\d{4})?)/i,
+    /(?:back|return(?:ing)?)\s+(?:on\s+)?(\d{1,2}\/\d{1,2}(?:\/\d{2,4})?)/i,
+  ];
+  for (const pattern of patterns) {
+    const match = text.match(pattern);
+    if (match) {
+      const parsed = new Date(match[1]);
+      if (!isNaN(parsed.getTime()) && parsed > new Date()) return parsed.toISOString();
+    }
+  }
+  return null;
 }
 
 // Health check

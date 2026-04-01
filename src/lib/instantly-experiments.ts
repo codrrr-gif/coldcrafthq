@@ -5,13 +5,15 @@
 // ============================================
 
 import { supabase } from '@/lib/supabase/client';
-import { addLeadsToCampaign } from './instantly';
+
+const DEFAULT_CLIENT_ID = '00000000-0000-0000-0000-000000000001';
 
 export async function createExperiment(params: {
   name: string;
   baseCampaignId: string;
   signalType?: string;
   variantCampaignIds: string[];
+  clientId?: string;
 }): Promise<string> {
   const { data, error } = await supabase
     .from('ab_experiments')
@@ -21,66 +23,13 @@ export async function createExperiment(params: {
       signal_type: params.signalType || null,
       variant_campaign_ids: params.variantCampaignIds,
       status: 'active',
+      client_id: params.clientId || DEFAULT_CLIENT_ID,
     })
     .select('id')
     .single();
 
   if (error) throw new Error(`Failed to create experiment: ${error.message}`);
   return data.id;
-}
-
-export async function assignLeadToExperiment(
-  experimentId: string,
-  leadEmail: string
-): Promise<{ campaignId: string; variantIndex: number }> {
-  const { data: exp } = await supabase
-    .from('ab_experiments')
-    .select('*')
-    .eq('id', experimentId)
-    .single();
-
-  if (!exp || exp.status !== 'active') throw new Error('Experiment not active');
-
-  const allCampaigns = [exp.base_campaign_id, ...exp.variant_campaign_ids];
-
-  // Round-robin: count existing assignments per variant, assign to least-used
-  const { data: counts } = await supabase
-    .from('ab_experiment_leads')
-    .select('variant_index')
-    .eq('experiment_id', experimentId);
-
-  const countPerVariant = new Map<number, number>();
-  for (let i = 0; i < allCampaigns.length; i++) countPerVariant.set(i, 0);
-  for (const c of counts || []) {
-    countPerVariant.set(c.variant_index, (countPerVariant.get(c.variant_index) || 0) + 1);
-  }
-
-  let minIndex = 0;
-  let minCount = Infinity;
-  for (const [idx, count] of countPerVariant) {
-    if (count < minCount) { minCount = count; minIndex = idx; }
-  }
-
-  const campaignId = allCampaigns[minIndex];
-
-  await addLeadsToCampaign(campaignId, [{ email: leadEmail }]);
-
-  await supabase.from('ab_experiment_leads').upsert(
-    {
-      experiment_id: experimentId,
-      lead_email: leadEmail,
-      variant_index: minIndex,
-      campaign_id: campaignId,
-    },
-    { onConflict: 'experiment_id,lead_email' }
-  );
-
-  await supabase
-    .from('ab_experiments')
-    .update({ total_leads: (exp.total_leads || 0) + 1 })
-    .eq('id', experimentId);
-
-  return { campaignId, variantIndex: minIndex };
 }
 
 export async function getExperimentResults(experimentId: string) {
@@ -92,7 +41,7 @@ export async function getExperimentResults(experimentId: string) {
 
   if (!exp) return null;
 
-  const allCampaigns = [exp.base_campaign_id, ...exp.variant_campaign_ids];
+  const allCampaigns = [exp.base_campaign_id, ...(exp.variant_campaign_ids || [])];
   const variants = [];
 
   for (let i = 0; i < allCampaigns.length; i++) {
@@ -109,7 +58,13 @@ export async function getExperimentResults(experimentId: string) {
       .eq('variant_index', i);
 
     const emails = (variantLeads || []).map((l) => l.lead_email);
-    const { count: replyCount } = emails.length > 0
+
+    // Count only interested replies (consistent with evaluator)
+    const { count: positiveCount } = emails.length > 0
+      ? await supabase.from('replies').select('id', { count: 'exact', head: true }).in('lead_email', emails).eq('category', 'interested')
+      : { count: 0 };
+
+    const { count: totalReplyCount } = emails.length > 0
       ? await supabase.from('replies').select('id', { count: 'exact', head: true }).in('lead_email', emails)
       : { count: 0 };
 
@@ -121,13 +76,16 @@ export async function getExperimentResults(experimentId: string) {
       .filter((r) => r.outcome === 'won')
       .reduce((sum, r) => sum + (r.deal_value || 0), 0);
 
+    const leads = leadCount || 0;
     variants.push({
       index: i,
       campaign_id: allCampaigns[i],
       label: i === 0 ? 'control' : `variant_${i}`,
-      leads: leadCount || 0,
-      replies: replyCount || 0,
-      reply_rate: (leadCount || 0) > 0 ? ((replyCount || 0) / (leadCount || 1)) : 0,
+      leads,
+      replies: totalReplyCount || 0,
+      positive_replies: positiveCount || 0,
+      reply_rate: leads > 0 ? ((totalReplyCount || 0) / leads) : 0,
+      positive_rate: leads > 0 ? ((positiveCount || 0) / leads) : 0,
       revenue: wonRevenue,
     });
   }

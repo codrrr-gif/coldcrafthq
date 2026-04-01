@@ -130,55 +130,87 @@ export async function GET(req: NextRequest) {
         continue;
       }
 
-      // For 2-variant experiments (base vs variant), run z-test
-      if (stats.length === 2) {
-        const [base, variant] = stats;
+      // Compare each variant against the base using pairwise z-tests
+      const base = stats[0];
+      let bestVariant: VariantStats | null = null;
+      let bestZ = 0;
+      let anySignificant = false;
+      const losers: VariantStats[] = [];
+
+      for (let i = 1; i < stats.length; i++) {
+        const variant = stats[i];
         const z = zTestProportions(base.leads, base.rate, variant.leads, variant.rate);
 
-        if (Math.abs(z) < Z_THRESHOLD) {
-          results.push({
-            signal_type: exp.signal_type || 'unknown',
-            action: 'no_significance',
-            details: `z=${z.toFixed(2)} (need >${Z_THRESHOLD}). Base: ${(base.rate * 100).toFixed(1)}% (${base.positiveReplies}/${base.leads}), Variant: ${(variant.rate * 100).toFixed(1)}% (${variant.positiveReplies}/${variant.leads})`,
-          });
-          continue;
+        if (Math.abs(z) >= Z_THRESHOLD) {
+          anySignificant = true;
+          if (variant.rate > base.rate && z < bestZ) {
+            // Variant beats base — track it
+          }
+          if (z < -Z_THRESHOLD) {
+            // Variant is significantly better than base
+            if (!bestVariant || variant.rate > bestVariant.rate) {
+              bestVariant = variant;
+              bestZ = z;
+            }
+          } else if (z > Z_THRESHOLD) {
+            // Base is significantly better — variant loses
+            losers.push(variant);
+          }
         }
+      }
 
-        // We have a winner
-        const winner = z > 0 ? base : variant;
-        const loser = z > 0 ? variant : base;
-        const winnerLabel = z > 0 ? 'Base' : 'Variant';
+      // Also check if base beats all variants
+      const baseWins = losers.length === stats.length - 1;
+      const winner = baseWins ? base : (bestVariant || (anySignificant ? base : null));
 
-        // Update experiment
-        await supabase
-          .from('ab_experiments')
-          .update({
-            status: 'completed',
-            winner_campaign_id: winner.campaignId,
-            ended_at: new Date().toISOString(),
-          })
-          .eq('id', exp.id);
-
-        // Pause the losing campaign
-        await pauseCampaign(loser.campaignId);
-
-        // Notify Slack
-        const message = [
-          `*A/B Winner Declared: ${exp.signal_type}*`,
-          `${winnerLabel} wins with ${(winner.rate * 100).toFixed(1)}% positive reply rate vs ${(loser.rate * 100).toFixed(1)}%`,
-          `Base: ${base.positiveReplies}/${base.leads} interested | Variant: ${variant.positiveReplies}/${variant.leads} interested`,
-          `z-score: ${Math.abs(z).toFixed(2)} (95% confidence)`,
-          `Losing campaign paused. All future ${exp.signal_type} leads route to winner.`,
-        ].join('\n');
-
-        await notifySlack(message, 'info');
-
+      if (!winner) {
+        const rateStr = stats.map((s) => `v${s.index}=${(s.rate * 100).toFixed(1)}%`).join(', ');
         results.push({
           signal_type: exp.signal_type || 'unknown',
-          action: 'declared_winner',
-          details: `${winnerLabel} wins. ${(winner.rate * 100).toFixed(1)}% vs ${(loser.rate * 100).toFixed(1)}% (z=${Math.abs(z).toFixed(2)})`,
+          action: 'no_significance',
+          details: `No significant difference yet. Rates: ${rateStr}`,
         });
+        continue;
       }
+
+      const winnerLabel = winner === base ? 'Base' : `Variant ${winner.index}`;
+
+      // Update experiment
+      await supabase
+        .from('ab_experiments')
+        .update({
+          status: 'completed',
+          winner_campaign_id: winner.campaignId,
+          ended_at: new Date().toISOString(),
+        })
+        .eq('id', exp.id);
+
+      // Pause all losing campaigns
+      for (const s of stats) {
+        if (s.campaignId !== winner.campaignId) {
+          await pauseCampaign(s.campaignId);
+        }
+      }
+
+      // Notify Slack
+      const rateBreakdown = stats.map((s) =>
+        `${s.index === 0 ? 'Base' : `V${s.index}`}: ${s.positiveReplies}/${s.leads} (${(s.rate * 100).toFixed(1)}%)`
+      ).join(' | ');
+
+      const message = [
+        `*A/B Winner Declared: ${exp.signal_type}*`,
+        `${winnerLabel} wins at 95% confidence`,
+        rateBreakdown,
+        `Losing campaign${stats.length > 2 ? 's' : ''} paused. All future ${exp.signal_type} leads route to winner.`,
+      ].join('\n');
+
+      await notifySlack(message, 'info');
+
+      results.push({
+        signal_type: exp.signal_type || 'unknown',
+        action: 'declared_winner',
+        details: `${winnerLabel} wins. ${rateBreakdown}`,
+      });
     }
 
     return NextResponse.json({ evaluated: experiments.length, results });

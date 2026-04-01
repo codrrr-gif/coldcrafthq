@@ -142,21 +142,29 @@ export async function processPipelineLead(lead: PipelineLead): Promise<void> {
 
       if (activeExp) {
         const allCampaigns = [activeExp.base_campaign_id, ...(activeExp.variant_campaign_ids || [])];
-        const variantIndex = (activeExp.total_leads || 0) % allCampaigns.length;
+
+        // Atomic increment to prevent race condition in concurrent processing
+        const { data: updated } = await supabase
+          .from('ab_experiments')
+          .update({ total_leads: (activeExp.total_leads || 0) + 1 })
+          .eq('id', activeExp.id)
+          .eq('total_leads', activeExp.total_leads || 0) // optimistic lock
+          .select('total_leads')
+          .single();
+
+        // Use pre-increment value for modulo assignment
+        const currentCount = updated ? (updated.total_leads - 1) : (activeExp.total_leads || 0);
+        const variantIndex = currentCount % allCampaigns.length;
         finalCampaignId = allCampaigns[variantIndex];
 
-        // Record assignment + increment counter
-        await Promise.all([
-          supabase.from('ab_experiment_leads').upsert({
-            experiment_id: activeExp.id,
-            lead_email: emailResult.email,
-            variant_index: variantIndex,
-            campaign_id: finalCampaignId,
-          }, { onConflict: 'experiment_id,lead_email' }),
-          supabase.from('ab_experiments')
-            .update({ total_leads: (activeExp.total_leads || 0) + 1 })
-            .eq('id', activeExp.id),
-        ]).catch(console.error);
+        // Record assignment
+        const { error: assignErr } = await supabase.from('ab_experiment_leads').upsert({
+          experiment_id: activeExp.id,
+          lead_email: emailResult.email,
+          variant_index: variantIndex,
+          campaign_id: finalCampaignId,
+        }, { onConflict: 'experiment_id,lead_email' });
+        if (assignErr) console.error('[processor] A/B assignment failed:', assignErr);
       } else {
         // No active experiment — check for a completed one with a declared winner
         const { data: completedExp } = await supabase

@@ -62,11 +62,49 @@ export async function GET(request: Request) {
     .eq('snapshot_date', today)
     .order('health_score', { ascending: true });
 
-  // 4. Active A/B experiments
-  const { data: experiments } = await supabase
+  // 4. Active A/B experiments (enriched with computed variant stats)
+  const { data: rawExperiments } = await supabase
     .from('ab_experiments')
     .select('*')
     .eq('status', 'active');
+
+  const experiments = await Promise.all(
+    (rawExperiments || []).map(async (exp) => {
+      const allCampaigns = [exp.base_campaign_id, ...(exp.variant_campaign_ids || [])];
+      const variantStats = [];
+
+      for (let i = 0; i < Math.min(allCampaigns.length, 2); i++) {
+        const { data: variantLeads } = await supabase
+          .from('ab_experiment_leads')
+          .select('lead_email')
+          .eq('experiment_id', exp.id)
+          .eq('variant_index', i);
+
+        const emails = (variantLeads || []).map((l: { lead_email: string }) => l.lead_email);
+        let replies = 0;
+        let positive = 0;
+        if (emails.length > 0) {
+          const { count: rc } = await supabase.from('replies').select('id', { count: 'exact', head: true }).in('lead_email', emails);
+          const { count: pc } = await supabase.from('replies').select('id', { count: 'exact', head: true }).in('lead_email', emails).eq('category', 'interested');
+          replies = rc || 0;
+          positive = pc || 0;
+        }
+        variantStats.push({ sent: emails.length, replies, positive });
+      }
+
+      return {
+        ...exp,
+        variant_a_label: 'Control',
+        variant_b_label: allCampaigns.length > 1 ? 'Variant' : 'N/A',
+        variant_a_sent: variantStats[0]?.sent || 0,
+        variant_a_replies: variantStats[0]?.replies || 0,
+        variant_a_positive: variantStats[0]?.positive || 0,
+        variant_b_sent: variantStats[1]?.sent || 0,
+        variant_b_replies: variantStats[1]?.replies || 0,
+        variant_b_positive: variantStats[1]?.positive || 0,
+      };
+    })
+  );
 
   // 5. Campaign metrics from pipeline_leads
   const { data: campaignLeads } = await supabase

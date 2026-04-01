@@ -111,7 +111,7 @@ async function handler() {
 
         if (error || !rawSignal) continue;
 
-        await supabase.from('pipeline_leads').insert({
+        const { error: leadError } = await supabase.from('pipeline_leads').insert({
           signal_id: rawSignal.id,
           company_name: signal.company_name,
           company_domain: signal.company_domain,
@@ -120,7 +120,13 @@ async function handler() {
           signal_date: signal.signal_date,
           signal_score: score,
           status: 'pending',
+          client_id: '00000000-0000-0000-0000-000000000001',
         });
+
+        if (leadError) {
+          console.error(`[check] Failed to create pipeline_lead for ${signal.company_domain}:`, leadError);
+          continue;
+        }
 
         sourceIngested++;
         totalIngested++;
