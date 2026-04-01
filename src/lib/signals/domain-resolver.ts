@@ -49,9 +49,17 @@ export async function resolveDomain(companyName: string): Promise<string | null>
     const raw: string = data.choices?.[0]?.message?.content || '';
     if (!raw) return null;
 
+    // Reject AI-generated paragraphs — a domain is never more than ~60 chars
+    // and never contains spaces, newlines, or sentence-like patterns
+    if (raw.length > 80 || raw.includes('\n') || raw.includes(' the ') || raw.includes(' is ') || raw.includes('I don')) {
+      console.warn(`[domain-resolver] Perplexity returned paragraph for "${companyName}", rejecting`);
+      return null;
+    }
+
     // Clean the response: strip protocol, www., citation markers, trailing junk
     const domain = raw
       .trim()
+      .split(/\s/)[0]              // Take only the first word (handles "acme.com is the...")
       .replace(/^https?:\/\//, '')
       .replace(/^www\./, '')
       .replace(/\/.*$/, '')
@@ -61,7 +69,7 @@ export async function resolveDomain(companyName: string): Promise<string | null>
       .trim();
 
     // Basic sanity check — must look like a domain
-    if (!domain || !domain.includes('.') || domain.length < 4) return null;
+    if (!domain || !domain.includes('.') || domain.length < 4 || domain.length > 60) return null;
 
     // Cache the resolved domain
     if (domain) {
