@@ -148,9 +148,26 @@ export async function POST(req: NextRequest) {
 
     if (category === 'hard_no') {
       // === HARD NO: Auto-handle immediately ===
+      // Must remove from campaign + blocklist to protect sender reputation
       try {
         await tagLead(lead_email, 'HARD NO');
-        if (campaign_id) await deleteLead(campaign_id, lead_email);
+
+        // If webhook didn't include campaign_id, look it up from pipeline_leads
+        let deleteCampaignId = campaign_id;
+        if (!deleteCampaignId) {
+          const { data: pl } = await supabase
+            .from('pipeline_leads')
+            .select('instantly_campaign_id')
+            .eq('email', lead_email)
+            .not('instantly_campaign_id', 'is', null)
+            .limit(1)
+            .maybeSingle();
+          deleteCampaignId = pl?.instantly_campaign_id || null;
+        }
+
+        if (deleteCampaignId) {
+          await deleteLead(deleteCampaignId, lead_email);
+        }
         await blockEmail(lead_email);
         status = 'skipped';
 

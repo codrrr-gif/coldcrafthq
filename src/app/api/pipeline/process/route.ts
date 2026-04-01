@@ -6,14 +6,16 @@ import { NextRequest, NextResponse } from 'next/server';
 import { supabase } from '@/lib/supabase/client';
 import { processPipelineLead } from '@/lib/pipeline/processor';
 import { cleanupStalePipelineLeads } from '@/lib/pipeline/lead-cleanup';
-import { requireSecret } from '@/lib/auth/api-auth';
+import { requireSecret, requireSession } from '@/lib/auth/api-auth';
 import { checkDailyLimits } from '@/lib/pipeline/circuit-breaker';
 
 export const dynamic = 'force-dynamic';
 export const maxDuration = 300;
 
 export async function POST(req: NextRequest) {
-  const authErr = requireSecret(req);
+  // Accept either session auth (dashboard) or bearer token (cron)
+  const hasBearer = req.headers.get('authorization')?.startsWith('Bearer ');
+  const authErr = hasBearer ? requireSecret(req) : await requireSession();
   if (authErr) return authErr;
 
   try {

@@ -142,15 +142,19 @@ export async function processReferral(params: {
 
   // Push to the same signal campaign type as the original lead
   const campaignId = signalType ? getCampaignId(signalType as SignalType) : null;
+  const nameParts = (referral.name || '').split(/\s+/);
+  const firstName = nameParts[0] || '';
 
   if (campaignId) {
-    const nameParts = (referral.name || '').split(/\s+/);
-    const opener = params.personalizedOpener
-      || `${referral.name ? referral.name + ', y' : 'Y'}our colleague mentioned you'd be the right person to connect with about this.`;
+    // Build a warm referral opener that mentions who sent us
+    const sourceName = params.sourceLeadEmail.split('@')[0].replace(/[._]/g, ' ');
+    const opener = firstName
+      ? `${firstName}, your colleague ${sourceName} pointed me your way — mentioned you'd be the right person to chat with about outbound.`
+      : `Your colleague ${sourceName} suggested I reach out — mentioned you'd be the right person to connect with about this.`;
 
     await addLeadsToCampaign(campaignId, [{
       email,
-      first_name: nameParts[0] || undefined,
+      first_name: firstName || undefined,
       last_name: nameParts.slice(1).join(' ') || undefined,
       company_name: referral.company || undefined,
       title: referral.title || undefined,
