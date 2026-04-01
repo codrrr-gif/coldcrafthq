@@ -36,7 +36,7 @@ async function findViaLinkedInPeopleSearch(
   try {
     const titleKeywords = ['VP Sales', 'Head of Sales', 'CRO', 'VP Marketing', 'Head of Growth', 'CMO', 'CEO', 'Founder', 'Owner', 'President', 'Managing Director', 'Partner', 'General Manager', 'Director of Sales'];
     const { runId, datasetId } = await runLinkedInPeopleSearch(companyName, titleKeywords, 10);
-    const items = await pollApifyRun(runId, datasetId, 180);
+    const items = await pollApifyRun(runId, datasetId, 45);
 
     for (const item of items) {
       const fullName = String(item.name || item.fullName || '');
@@ -70,17 +70,18 @@ export async function findDecisionMaker(
   companyName: string,
   companyDomain: string,
 ): Promise<Contact | null> {
-  // Level 0: Direct LinkedIn People Search (highest fidelity)
-  const linkedInContact = await findViaLinkedInPeopleSearch(companyName);
-  if (linkedInContact) return linkedInContact;
+  // Hard cap: 120s total for all levels — prevents one lead from eating the function budget
+  const deadline = Date.now() + 120_000;
 
-  // Level 1: LinkedIn via Google
+  // Level 1: LinkedIn via Google (primary — fast and reliable)
   const contact = await findViaLinkedInSearch(companyName, companyDomain);
   if (contact) return contact;
+  if (Date.now() > deadline) return null;
 
   // Level 2: Company website team/about page
   const contactFromSite = await findViaCompanyWebsite(companyDomain);
   if (contactFromSite) return contactFromSite;
+  if (Date.now() > deadline) return null;
 
   // Level 3: Broad Google search (no site: restriction)
   return findViaBroadSearch(companyName, companyDomain);
@@ -98,7 +99,7 @@ async function findViaLinkedInSearch(
 
   try {
     const { runId, datasetId } = await runGoogleSearch(queries, 5);
-    const items = await pollApifyRun(runId, datasetId, 180);
+    const items = await pollApifyRun(runId, datasetId, 45);
 
     for (const item of items) {
       const url = String(item.url || '');
@@ -145,7 +146,7 @@ async function findViaCompanyWebsite(companyDomain: string): Promise<Contact | n
       maxRequestsPerCrawl: 4,
     });
 
-    const items = await pollApifyRun(runId, datasetId, 60);
+    const items = await pollApifyRun(runId, datasetId, 30);
 
     for (const item of items) {
       const name = String((item as Record<string, unknown>).name || '');
@@ -177,7 +178,7 @@ async function findViaBroadSearch(
 
   try {
     const { runId, datasetId } = await runGoogleSearch(queries, 5);
-    const items = await pollApifyRun(runId, datasetId, 90);
+    const items = await pollApifyRun(runId, datasetId, 45);
 
     for (const item of items) {
       const url = String(item.url || '');

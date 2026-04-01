@@ -16,7 +16,7 @@ import { checkDailyLimits } from '@/lib/pipeline/circuit-breaker';
 export const dynamic = 'force-dynamic';
 export const maxDuration = 300; // 5 min max — matches cron interval
 
-const BATCH_SIZE = 5; // Process up to 5 leads per cron tick
+const BATCH_SIZE = 2; // Keep small — contact finder waterfall is slow
 
 export async function GET(req: NextRequest) {
   const authErr = requireSecret(req);
