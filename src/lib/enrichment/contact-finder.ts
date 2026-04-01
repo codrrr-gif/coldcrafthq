@@ -7,7 +7,7 @@
 //   Level 3: Broad Google search for decision maker at company
 // ============================================
 
-import { runGoogleSearch, runActor, runLinkedInPeopleSearch, getRunStatus, getDatasetItems } from '@/lib/apify';
+import { runGoogleSearch, getRunStatus, getDatasetItems } from '@/lib/apify';
 import { isTitleInIcp } from '@/lib/signals/icp-filter';
 
 export interface Contact {
@@ -28,41 +28,7 @@ const DECISION_MAKER_TITLES = [
   'Director of Business Development', 'Head of Business Development',
 ];
 
-// ── Level 0: Direct LinkedIn People Search ─────────────────────────────────
-
-async function findViaLinkedInPeopleSearch(
-  companyName: string,
-): Promise<Contact | null> {
-  try {
-    const titleKeywords = ['VP Sales', 'Head of Sales', 'CRO', 'VP Marketing', 'Head of Growth', 'CMO', 'CEO', 'Founder', 'Owner', 'President', 'Managing Director', 'Partner', 'General Manager', 'Director of Sales'];
-    const { runId, datasetId } = await runLinkedInPeopleSearch(companyName, titleKeywords, 10);
-    const items = await pollApifyRun(runId, datasetId, 45);
-
-    for (const item of items) {
-      const fullName = String(item.name || item.fullName || '');
-      const role = String(item.title || item.headline || item.position || '');
-      const profileUrl = String(item.url || item.profileUrl || item.linkedinUrl || '');
-
-      if (!fullName || !role) continue;
-
-      // Check if the title matches our ICP decision-maker roles
-      if (!isTitleInIcp(role)) continue;
-
-      const name = parseFullName(fullName);
-      if (!name) continue;
-
-      return {
-        ...name,
-        title: role.split(' at ')[0].split(' | ')[0].trim(),
-        linkedin_url: profileUrl.includes('linkedin.com') ? profileUrl : null,
-        source: 'linkedin_people_search',
-      };
-    }
-  } catch (err) {
-    console.error('[contact-finder] LinkedIn People Search failed:', err);
-  }
-  return null;
-}
+// ── (LinkedIn People Search removed — actor doesn't exist on Apify) ──────
 
 // ── Level 1: Google → LinkedIn search ──────────────────────────────────────
 
@@ -189,51 +155,7 @@ async function findViaLinkedInSearch(
   return null;
 }
 
-async function findViaCompanyWebsite(companyDomain: string): Promise<Contact | null> {
-  // Try common team/about pages — Apify Cheerio Scraper is fast and cheap
-  const teamPages = [
-    `https://${companyDomain}/team`,
-    `https://${companyDomain}/about`,
-    `https://${companyDomain}/leadership`,
-    `https://${companyDomain}/about-us`,
-  ];
-
-  try {
-    const { runId, datasetId } = await runActor('apify/cheerio-scraper', {
-      startUrls: teamPages.map((url) => ({ url })),
-      pageFunction: `async function pageFunction({ $, request }) {
-        const people = [];
-        // Look for common leadership section patterns
-        $('h1, h2, h3, h4, [class*="name"], [class*="member"], [class*="person"], [class*="team"], [class*="leader"]').each((_, el) => {
-          const text = $(el).text().trim();
-          if (text.length < 3 || text.length > 80) return;
-          // Look for adjacent title/role text
-          const role = $(el).next().text().trim() || $(el).parent().find('[class*="title"], [class*="role"], [class*="position"]').first().text().trim();
-          if (text && role) people.push({ name: text, role, url: request.url });
-        });
-        return people;
-      }`,
-      maxRequestsPerCrawl: 4,
-    });
-
-    const items = await pollApifyRun(runId, datasetId, 30);
-
-    for (const item of items) {
-      const name = String((item as Record<string, unknown>).name || '');
-      const role = String((item as Record<string, unknown>).role || '');
-      if (!name || !role) continue;
-      if (!isTitleInIcp(role)) continue;
-
-      const parsed = parseFullName(name);
-      if (!parsed) continue;
-
-      return { ...parsed, title: role.trim(), linkedin_url: null, source: 'company_website' };
-    }
-  } catch (err) {
-    console.error('[contact-finder] Company website scrape failed:', err);
-  }
-  return null;
-}
+// (Company website scraper removed — Cheerio parsed page copy as person names)
 
 async function findViaBroadSearch(
   companyName: string,
