@@ -51,7 +51,11 @@ export async function resolveDomain(companyName: string): Promise<string | null>
 
     // Reject AI-generated paragraphs — a domain is never more than ~60 chars
     // and never contains spaces, newlines, or sentence-like patterns
-    if (raw.length > 80 || raw.includes('\n') || raw.includes(' the ') || raw.includes(' is ') || raw.includes('I don')) {
+    if (
+      raw.length > 80 ||
+      raw.includes('\n') ||
+      /\b(the|is|are|was|were|have|has|don't|cannot|ambiguous|multiple|refers to|information|website)\b/i.test(raw)
+    ) {
       console.warn(`[domain-resolver] Perplexity returned paragraph for "${companyName}", rejecting`);
       return null;
     }

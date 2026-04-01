@@ -27,21 +27,27 @@ export async function processPipelineLead(lead: PipelineLead): Promise<void> {
   const { id, company_name, company_domain, signal_type, signal_summary, signal_date } = lead;
 
   try {
-    // Step 1: Find decision maker
-    await updateLead(id, { status: 'finding_contact' });
-    const contact = await findDecisionMaker(company_name || '', company_domain);
+    // Step 1: Find decision maker (skip if already found on a previous run)
+    let contact: { first_name: string; last_name: string; title: string; linkedin_url: string | null };
+    if (lead.first_name && lead.last_name) {
+      contact = { first_name: lead.first_name, last_name: lead.last_name, title: lead.title || '', linkedin_url: lead.linkedin_url || null };
+    } else {
+      await updateLead(id, { status: 'finding_contact' });
+      const found = await findDecisionMaker(company_name || '', company_domain);
 
-    if (!contact) {
-      await updateLead(id, { status: 'failed', failure_reason: 'no_contact_found' });
-      return;
+      if (!found) {
+        await updateLead(id, { status: 'failed', failure_reason: 'no_contact_found' });
+        return;
+      }
+
+      contact = found;
+      await updateLead(id, {
+        first_name: contact.first_name,
+        last_name: contact.last_name,
+        title: contact.title,
+        linkedin_url: contact.linkedin_url,
+      });
     }
-
-    await updateLead(id, {
-      first_name: contact.first_name,
-      last_name: contact.last_name,
-      title: contact.title,
-      linkedin_url: contact.linkedin_url,
-    });
 
     // Step 2: Find email
     await updateLead(id, { status: 'finding_email' });
@@ -78,8 +84,8 @@ export async function processPipelineLead(lead: PipelineLead): Promise<void> {
 
     await updateLead(id, { composite_score: compositeScore } as Partial<PipelineLead>);
 
-    // Only push verified emails
-    if (emailResult.verdict !== 'valid') {
+    // Only push verified or risky emails (risky = catch-all/unconfirmed, still sendable)
+    if (emailResult.verdict !== 'valid' && emailResult.verdict !== 'risky') {
       await updateLead(id, { status: 'filtered', failure_reason: `email_verdict_${emailResult.verdict}` });
       return;
     }
