@@ -35,6 +35,7 @@ import { requireSecret } from '@/lib/auth/api-auth';
 import { insertActivity } from '@/lib/portal/activity';
 import { getPlaybook } from '@/lib/ai/playbooks';
 import { scheduleFollowUp } from '@/lib/followups/scheduler';
+import { extractReferral, processReferral } from '@/lib/referrals/extract';
 import type { ThreadMessage } from '@/lib/types';
 import type { SubCategory } from '@/lib/ai/playbooks';
 
@@ -307,6 +308,33 @@ export async function POST(req: NextRequest) {
         }
       } catch (err) {
         console.error('[webhook] Follow-up scheduling failed:', err);
+      }
+    }
+
+    // Step 5.6: Auto-process referrals — extract referred person, push to pipeline
+    if (subCategory === 'interested.referral' || subCategory === 'custom.forwarded') {
+      try {
+        const referral = extractReferral(reply_text, leadCompany || null);
+        if (referral) {
+          // Look up original lead for context
+          const { data: sourceLead } = await supabase
+            .from('pipeline_leads')
+            .select('signal_type, company_domain, personalized_opener')
+            .eq('email', lead_email)
+            .limit(1)
+            .maybeSingle();
+
+          processReferral({
+            referral,
+            sourceLeadEmail: lead_email,
+            sourceReplyId: replyRecord?.id || '',
+            signalType: sourceLead?.signal_type || null,
+            companyDomain: sourceLead?.company_domain || null,
+            personalizedOpener: null,
+          }).catch(console.error); // fire-and-forget
+        }
+      } catch (err) {
+        console.error('[webhook] Referral extraction failed:', err);
       }
     }
 
