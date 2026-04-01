@@ -84,6 +84,18 @@ export async function processPipelineLead(lead: PipelineLead): Promise<void> {
       return;
     }
 
+    // Reject generic/role mailboxes — these aren't people
+    const emailPrefix = emailResult.email.split('@')[0].toLowerCase();
+    const GENERIC_PREFIXES = [
+      'info', 'sales', 'contact', 'hello', 'support', 'admin', 'team',
+      'office', 'help', 'careers', 'hr', 'billing', 'marketing',
+      'press', 'media', 'feedback', 'general', 'enquiries', 'our',
+    ];
+    if (GENERIC_PREFIXES.some(p => emailPrefix === p || emailPrefix.startsWith(`${p}.`))) {
+      await updateLead(id, { status: 'filtered', failure_reason: 'generic_mailbox' });
+      return;
+    }
+
     // signal_type is required for research and campaign routing
     if (!signal_type) {
       await updateLead(id, { status: 'failed', failure_reason: 'missing_signal_type' });

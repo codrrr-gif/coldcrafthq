@@ -49,16 +49,19 @@ export async function resolveDomain(companyName: string): Promise<string | null>
     const raw: string = data.choices?.[0]?.message?.content || '';
     if (!raw) return null;
 
-    // Clean the response: strip protocol, www., trailing slashes/paths, whitespace
+    // Clean the response: strip protocol, www., citation markers, trailing junk
     const domain = raw
       .trim()
       .replace(/^https?:\/\//, '')
       .replace(/^www\./, '')
       .replace(/\/.*$/, '')
+      .replace(/\[.*$/g, '')       // Perplexity citation markers: domain.com[1][5]
+      .replace(/[^a-zA-Z0-9.-]/g, '') // Strip any remaining non-domain chars
+      .toLowerCase()
       .trim();
 
     // Basic sanity check — must look like a domain
-    if (!domain || !domain.includes('.')) return null;
+    if (!domain || !domain.includes('.') || domain.length < 4) return null;
 
     // Cache the resolved domain
     if (domain) {

@@ -19,10 +19,13 @@ export interface Contact {
 }
 
 const DECISION_MAKER_TITLES = [
+  'CEO', 'Founder', 'Co-Founder', 'Owner', 'President',
+  'Managing Director', 'Partner', 'Managing Partner', 'Principal', 'General Manager',
   'VP Sales', 'VP of Sales', 'Head of Sales', 'Chief Revenue Officer', 'CRO',
   'VP Marketing', 'VP of Marketing', 'Head of Growth', 'Head of Marketing',
   'Chief Marketing Officer', 'CMO', 'VP Business Development',
-  'Director of Sales', 'Director of Revenue', 'CEO', 'Founder',
+  'Director of Sales', 'Director of Marketing', 'Director of Revenue',
+  'Director of Business Development', 'Head of Business Development',
 ];
 
 // ── Level 0: Direct LinkedIn People Search ─────────────────────────────────
@@ -31,7 +34,7 @@ async function findViaLinkedInPeopleSearch(
   companyName: string,
 ): Promise<Contact | null> {
   try {
-    const titleKeywords = ['VP Sales', 'Head of Sales', 'CRO', 'VP Marketing', 'Head of Growth', 'CMO', 'CEO', 'Founder'];
+    const titleKeywords = ['VP Sales', 'Head of Sales', 'CRO', 'VP Marketing', 'Head of Growth', 'CMO', 'CEO', 'Founder', 'Owner', 'President', 'Managing Director', 'Partner', 'General Manager', 'Director of Sales'];
     const { runId, datasetId } = await runLinkedInPeopleSearch(companyName, titleKeywords, 10);
     const items = await pollApifyRun(runId, datasetId, 90);
 
@@ -88,9 +91,9 @@ async function findViaLinkedInSearch(
   companyDomain: string,
 ): Promise<Contact | null> {
   const queries = [
-    `site:linkedin.com/in "${companyName}" "VP Sales" OR "Head of Sales" OR "Chief Revenue Officer"`,
-    `site:linkedin.com/in "${companyName}" "VP Marketing" OR "Head of Growth" OR "CMO"`,
-    `site:linkedin.com/in "${companyDomain}" "VP Sales" OR "CRO" OR "VP Marketing"`,
+    `site:linkedin.com/in "${companyName}" "VP Sales" OR "Head of Sales" OR "CRO" OR "Owner" OR "Founder" OR "CEO"`,
+    `site:linkedin.com/in "${companyName}" "VP Marketing" OR "Head of Growth" OR "CMO" OR "President" OR "Managing Director"`,
+    `site:linkedin.com/in "${companyDomain}" "VP Sales" OR "CRO" OR "Owner" OR "Founder" OR "Director of Sales"`,
   ];
 
   try {

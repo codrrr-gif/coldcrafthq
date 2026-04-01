@@ -34,7 +34,7 @@ export function getIcpConfig() {
   return {
     targetTitles: (
       process.env.ICP_TARGET_TITLES ||
-      'CEO,Founder,Co-Founder,VP Sales,VP of Sales,Head of Sales,Chief Revenue Officer,CRO,VP Marketing,CMO,Head of Growth,Director of Sales,Head of Business Development,VP Business Development'
+      'CEO,Founder,Co-Founder,Owner,President,Managing Director,Partner,Managing Partner,Principal,General Manager,VP Sales,VP of Sales,Head of Sales,Chief Revenue Officer,CRO,VP Marketing,CMO,Head of Growth,Director of Sales,Director of Marketing,Director of Business Development,Head of Business Development,VP Business Development'
     ).split(',').map((t) => t.trim().toLowerCase()),
 
     excludeIndustries: (
