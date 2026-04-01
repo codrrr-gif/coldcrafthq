@@ -10,12 +10,11 @@
 // ============================================
 
 export function calculateCompositeScore(params: {
-  signal_score: number | null;  // 0-200 range from signal scorer
+  signal_score: number | null;  // 0-100 from signal scorer
   email_score: number | null;   // 0-100 from verification pipeline
   tam_score: number | null;     // 0-100 from company scorer
 }): number {
-  // Normalize signal_score from 0-200 to 0-100
-  const signalNorm = Math.min(100, Math.max(0, (params.signal_score || 0) / 2));
+  const signalNorm = Math.min(100, Math.max(0, params.signal_score || 0));
   const emailNorm = Math.min(100, Math.max(0, params.email_score || 50));   // default 50 if unknown
   const tamNorm = Math.min(100, Math.max(0, params.tam_score || 40));       // default 40 if unknown
 

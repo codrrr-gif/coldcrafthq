@@ -63,6 +63,7 @@ async function searchPerplexity(query: string): Promise<string> {
       messages: [{ role: 'user', content: query }],
       max_tokens: 400,
     }),
+    signal: AbortSignal.timeout(30000),
   });
 
   if (!res.ok) return '';

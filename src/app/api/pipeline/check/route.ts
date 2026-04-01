@@ -18,7 +18,7 @@ import { parseTwitterSignals } from '@/lib/signals/twitter';
 import { parseCrunchbaseActivitySignals } from '@/lib/signals/crunchbase-activity';
 import { filterSignalByIcp } from '@/lib/signals/icp-filter';
 import { scoreSignal, MIN_SIGNAL_SCORE } from '@/lib/signals/scorer';
-import { hasRecentSignal } from '@/lib/signals/deduplicator';
+import { hasRecentSignal, hasActivePipelineLead } from '@/lib/signals/deduplicator';
 import { resolveDomain } from '@/lib/signals/domain-resolver';
 import { checkPipelineHealth } from '@/lib/pipeline/health-check';
 
@@ -88,6 +88,13 @@ async function handler() {
         if (signal.company_domain) {
           const recent = await hasRecentSignal(signal.company_domain, signal.signal_type);
           if (recent) continue;
+
+          // Cross-signal dedup: skip if this company already has an active lead from ANY signal type
+          const activeLead = await hasActivePipelineLead(signal.company_domain);
+          if (activeLead) {
+            console.log(`[check] Skipping ${signal.company_domain} — active pipeline lead exists`);
+            continue;
+          }
         }
 
         const score = await scoreSignal(signal.signal_type, signal.signal_date, signal.headline);

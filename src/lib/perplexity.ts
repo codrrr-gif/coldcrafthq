@@ -33,9 +33,14 @@ async function queryPerplexity(query: string): Promise<string> {
       ],
       max_tokens: 600,
     }),
+    signal: AbortSignal.timeout(30000),
   });
 
-  if (!res.ok) return '';
+  if (!res.ok) {
+    const { trackServiceFailure } = await import('@/lib/slack');
+    trackServiceFailure('Perplexity', new Error(`${res.status} ${res.statusText}`)).catch(() => {});
+    return '';
+  }
   const data = await res.json();
   return data.choices?.[0]?.message?.content || '';
 }

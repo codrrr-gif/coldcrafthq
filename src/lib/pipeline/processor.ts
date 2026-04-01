@@ -90,6 +90,9 @@ export async function processPipelineLead(lead: PipelineLead): Promise<void> {
       'info', 'sales', 'contact', 'hello', 'support', 'admin', 'team',
       'office', 'help', 'careers', 'hr', 'billing', 'marketing',
       'press', 'media', 'feedback', 'general', 'enquiries', 'our',
+      'noreply', 'no-reply', 'donotreply', 'alert', 'notification',
+      'ops', 'devops', 'legal', 'compliance', 'webmaster', 'postmaster',
+      'abuse', 'security', 'reception', 'accounts', 'service',
     ];
     if (GENERIC_PREFIXES.some(p => emailPrefix === p || emailPrefix.startsWith(`${p}.`))) {
       await updateLead(id, { status: 'filtered', failure_reason: 'generic_mailbox' });
@@ -155,17 +158,30 @@ export async function processPipelineLead(lead: PipelineLead): Promise<void> {
       if (activeExp) {
         const allCampaigns = [activeExp.base_campaign_id, ...(activeExp.variant_campaign_ids || [])];
 
-        // Atomic increment to prevent race condition in concurrent processing
-        const { data: updated } = await supabase
-          .from('ab_experiments')
-          .update({ total_leads: (activeExp.total_leads || 0) + 1 })
-          .eq('id', activeExp.id)
-          .eq('total_leads', activeExp.total_leads || 0) // optimistic lock
-          .select('total_leads')
-          .single();
+        // Atomic increment with retry to handle concurrent processing
+        let currentCount = activeExp.total_leads || 0;
+        for (let attempt = 0; attempt < 3; attempt++) {
+          const { data: updated } = await supabase
+            .from('ab_experiments')
+            .update({ total_leads: currentCount + 1 })
+            .eq('id', activeExp.id)
+            .eq('total_leads', currentCount) // optimistic lock
+            .select('total_leads')
+            .single();
 
-        // Use pre-increment value for modulo assignment
-        const currentCount = updated ? (updated.total_leads - 1) : (activeExp.total_leads || 0);
+          if (updated) {
+            currentCount = updated.total_leads - 1;
+            break;
+          }
+          // Re-read on conflict
+          const { data: fresh } = await supabase
+            .from('ab_experiments')
+            .select('total_leads')
+            .eq('id', activeExp.id)
+            .single();
+          currentCount = fresh?.total_leads || currentCount;
+        }
+
         const variantIndex = currentCount % allCampaigns.length;
         finalCampaignId = allCampaigns[variantIndex];
 

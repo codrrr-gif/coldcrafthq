@@ -36,7 +36,7 @@ async function findViaLinkedInPeopleSearch(
   try {
     const titleKeywords = ['VP Sales', 'Head of Sales', 'CRO', 'VP Marketing', 'Head of Growth', 'CMO', 'CEO', 'Founder', 'Owner', 'President', 'Managing Director', 'Partner', 'General Manager', 'Director of Sales'];
     const { runId, datasetId } = await runLinkedInPeopleSearch(companyName, titleKeywords, 10);
-    const items = await pollApifyRun(runId, datasetId, 90);
+    const items = await pollApifyRun(runId, datasetId, 180);
 
     for (const item of items) {
       const fullName = String(item.name || item.fullName || '');
@@ -98,7 +98,7 @@ async function findViaLinkedInSearch(
 
   try {
     const { runId, datasetId } = await runGoogleSearch(queries, 5);
-    const items = await pollApifyRun(runId, datasetId, 120);
+    const items = await pollApifyRun(runId, datasetId, 180);
 
     for (const item of items) {
       const url = String(item.url || '');
