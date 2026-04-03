@@ -5,14 +5,19 @@ import type { ApifyDatasetItem, ParsedSignal } from '@/lib/gtm/types';
 import { extractDomainFromText, extractDateFromItem } from './utils';
 
 const LEADERSHIP_KEYWORDS = [
-  'appoints', 'hires', 'joins as', 'named', 'promoted to', 'welcomes',
+  'appoints', 'appointed', 'hires', 'hired', 'joins as', 'joined as',
+  'named', 'promoted to', 'welcomes', 'taps', 'elevates',
   'new vp', 'new head of', 'new chief', 'new cro', 'new cmo',
+  'brings on', 'onboards', 'names new',
 ];
 
 const TARGET_ROLES = [
   'vp sales', 'vp of sales', 'chief revenue', 'cro', 'head of sales',
   'vp marketing', 'cmo', 'head of growth', 'vp business development',
-  'director of sales', 'head of revenue',
+  'director of sales', 'head of revenue', 'chief marketing',
+  'chief commercial', 'cco', 'head of demand', 'svp sales', 'svp marketing',
+  'vp revenue', 'head of partnerships', 'chief growth',
+  'ceo', 'founder', 'co-founder', 'president', 'managing director',
 ];
 
 export function parseLeadershipSignals(items: ApifyDatasetItem[]): ParsedSignal[] {
@@ -23,8 +28,13 @@ export function parseLeadershipSignals(items: ApifyDatasetItem[]): ParsedSignal[
     const desc     = String(item.description || '').toLowerCase();
     const combined = `${title} ${desc}`;
 
+    // Require a leadership action keyword
     if (!LEADERSHIP_KEYWORDS.some((k) => combined.includes(k))) continue;
-    if (!TARGET_ROLES.some((r) => combined.includes(r))) continue;
+
+    // Accept if EITHER a target role is mentioned OR the headline indicates a C-level/VP hire
+    const hasTargetRole = TARGET_ROLES.some((r) => combined.includes(r));
+    const hasSeniorTitle = /\b(vp|vice president|svp|evp|chief|c-suite|head of|director of)\b/i.test(combined);
+    if (!hasTargetRole && !hasSeniorTitle) continue;
 
     const companyName = extractCompanyFromLeadershipHeadline(String(item.title || ''));
     const domain = extractDomainFromText(

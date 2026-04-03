@@ -28,7 +28,57 @@ const DECISION_MAKER_TITLES = [
   'Director of Business Development', 'Head of Business Development',
 ];
 
-// ── (LinkedIn People Search removed — actor doesn't exist on Apify) ──────
+// ── Level 0.5: Apollo.io People Search ───────────────────────────────────
+
+async function findViaApollo(
+  companyName: string,
+  companyDomain: string,
+): Promise<Contact | null> {
+  const apiKey = process.env.APOLLO_API_KEY;
+  if (!apiKey) return null;
+
+  try {
+    const res = await fetch('https://api.apollo.io/api/v1/mixed_people/search', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'x-api-key': apiKey,
+      },
+      body: JSON.stringify({
+        q_organization_domains: [companyDomain],
+        person_titles: [
+          'VP Sales', 'VP of Sales', 'Head of Sales', 'CRO', 'Chief Revenue Officer',
+          'VP Marketing', 'CMO', 'Head of Growth', 'Head of Marketing',
+          'CEO', 'Founder', 'Co-Founder', 'Owner', 'President', 'Managing Director',
+        ],
+        per_page: 3,
+      }),
+      signal: AbortSignal.timeout(10000),
+    });
+
+    if (!res.ok) return null;
+
+    const data = await res.json();
+    const people = data.people || [];
+
+    for (const person of people) {
+      if (!person.first_name || !person.last_name) continue;
+      const title = person.title || '';
+      if (!isTitleInIcp(title)) continue;
+
+      return {
+        first_name: person.first_name,
+        last_name: person.last_name,
+        title,
+        linkedin_url: person.linkedin_url || null,
+        source: 'apollo',
+      };
+    }
+  } catch (err) {
+    console.error('[contact-finder] Apollo search failed:', err);
+  }
+  return null;
+}
 
 // ── Level 1: Google → LinkedIn search ──────────────────────────────────────
 
@@ -44,14 +94,17 @@ export async function findDecisionMaker(
   if (perplexityContact) return perplexityContact;
   if (Date.now() > deadline) return null;
 
+  // Level 0.5: Apollo.io People Search (structured data, high accuracy for indexed companies)
+  const apolloContact = await findViaApollo(companyName, companyDomain);
+  if (apolloContact) return apolloContact;
+  if (Date.now() > deadline) return null;
+
   // Level 1: LinkedIn via Google (Apify fallback)
   const contact = await findViaLinkedInSearch(companyName, companyDomain);
   if (contact) return contact;
   if (Date.now() > deadline) return null;
 
   // Level 2: DISABLED — Cheerio scraper returns garbage (page copy as names)
-  // const contactFromSite = await findViaCompanyWebsite(companyDomain);
-  // if (contactFromSite) return contactFromSite;
   if (Date.now() > deadline) return null;
 
   // Level 3: Broad Google search (no site: restriction)

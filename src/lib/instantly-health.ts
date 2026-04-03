@@ -5,7 +5,9 @@
 // ============================================
 
 import { supabase } from '@/lib/supabase/client';
-import { listSendingAccounts } from './instantly';
+import { listSendingAccounts, getCampaigns, pauseCampaign } from './instantly';
+
+const BOUNCE_PAUSE_THRESHOLD = 0.02; // 2% — Google/Microsoft enforcement threshold
 
 interface AccountHealth {
   email: string;
@@ -21,6 +23,7 @@ interface AccountHealth {
 export async function checkAccountHealth(): Promise<{
   accounts: number;
   flagged: number;
+  paused: number;
   results: AccountHealth[];
 }> {
   const accounts = await listSendingAccounts();
@@ -61,7 +64,7 @@ export async function checkAccountHealth(): Promise<{
     const bounceRate = bounces / sends;
     const replyRate = replies / sends;
     const healthScore = Math.max(0, Math.min(100, Math.round(100 - bounceRate * 200 + replyRate * 50)));
-    const flagged = bounceRate > 0.05 || healthScore < 40;
+    const flagged = bounceRate > 0.02 || healthScore < 50;
 
     const health: AccountHealth = {
       email: account.email,
@@ -107,5 +110,28 @@ export async function checkAccountHealth(): Promise<{
     } catch {}
   }
 
-  return { accounts: accounts.length, flagged: flaggedAccounts.length, results };
+  // Auto-pause campaigns if workspace bounce rate > 3%
+  const workspaceBounceRate = workspaceBounces / workspaceSends;
+  let paused = 0;
+  if (workspaceBounceRate > BOUNCE_PAUSE_THRESHOLD) {
+    try {
+      const campaigns = await getCampaigns();
+      const active = campaigns.filter((c) => c.status === 'active' || c.status === 'sending');
+      for (const campaign of active) {
+        const ok = await pauseCampaign(campaign.id);
+        if (ok) paused++;
+      }
+      if (paused > 0) {
+        const { notifySlack } = await import('./slack');
+        await notifySlack(
+          `🛑 Bounce rate ${(workspaceBounceRate * 100).toFixed(1)}% exceeds 3% — auto-paused ${paused} campaign(s). Investigate before resuming.`,
+          'error'
+        );
+      }
+    } catch (err) {
+      console.error('[health] Auto-pause failed:', err);
+    }
+  }
+
+  return { accounts: accounts.length, flagged: flaggedAccounts.length, paused, results };
 }

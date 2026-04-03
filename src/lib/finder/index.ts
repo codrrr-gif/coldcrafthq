@@ -13,6 +13,43 @@ import { getCachedPattern, updateDomainPattern } from './patterns';
 import { verifyEmail } from '@/lib/verify/pipeline';
 import type { FinderResult } from '@/lib/gtm/types';
 
+// Step 0c: Apollo.io email lookup — large B2B contact database
+async function findEmailWithApollo(
+  firstName: string,
+  lastName: string,
+  domain: string,
+): Promise<string | null> {
+  const apiKey = process.env.APOLLO_API_KEY;
+  if (!apiKey) return null;
+
+  try {
+    const res = await fetch('https://api.apollo.io/api/v1/people/match', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'x-api-key': apiKey,
+      },
+      body: JSON.stringify({
+        first_name: firstName,
+        last_name: lastName,
+        organization_domain: domain,
+        reveal_personal_emails: false,
+      }),
+      signal: AbortSignal.timeout(10000),
+    });
+
+    if (!res.ok) return null;
+
+    const data = await res.json();
+    const email = data?.person?.email;
+    if (email) return email.toLowerCase();
+  } catch {
+    // Network error or timeout
+  }
+
+  return null;
+}
+
 // Step 0b: Hunter.io lookup — finds email by name + domain (fallback to FindyMail)
 async function findEmailWithHunter(
   firstName: string,
@@ -114,8 +151,9 @@ export async function findEmail(
   }
 
   // Step 0b: Hunter.io fallback — try if FindyMail missed or unavailable
+  let hunterEmail: string | null = null;
   if (!findymailEmail) {
-    const hunterEmail = await findEmailWithHunter(firstName, lastName, domain);
+    hunterEmail = await findEmailWithHunter(firstName, lastName, domain);
     if (hunterEmail) {
       triedPatterns.push(hunterEmail);
       const result = await verifyEmail(hunterEmail, {
@@ -129,6 +167,30 @@ export async function findEmail(
           found: true,
           pattern: null,
           found_via: 'hunter',
+          verdict: result.verdict,
+          score: result.score,
+          tried_patterns: triedPatterns,
+        };
+      }
+    }
+  }
+
+  // Step 0c: Apollo.io fallback — large B2B database
+  if (!findymailEmail && !hunterEmail) {
+    const apolloEmail = await findEmailWithApollo(firstName, lastName, domain);
+    if (apolloEmail) {
+      triedPatterns.push(apolloEmail);
+      const result = await verifyEmail(apolloEmail, {
+        use_million_verifier: false,
+        use_findymail: false,
+      });
+      if (result.verdict === 'valid' || result.verdict === 'risky') {
+        await updateDomainPattern(apolloEmail, firstName, lastName);
+        return {
+          email: apolloEmail,
+          found: true,
+          pattern: null,
+          found_via: 'apollo' as FinderResult['found_via'],
           verdict: result.verdict,
           score: result.score,
           tried_patterns: triedPatterns,

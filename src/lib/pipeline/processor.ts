@@ -210,6 +210,9 @@ export async function processPipelineLead(lead: PipelineLead): Promise<void> {
       signal_score: lead.signal_score,
       email_score: emailResult.score,
       tam_score: companyRow?.tam_score || null,
+      company_size: lead.company_size,
+      company_industry: lead.company_industry,
+      company_location: lead.company_location,
     });
 
     await updateLead(id, { composite_score: compositeScore } as Partial<PipelineLead>);

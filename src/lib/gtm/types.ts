@@ -27,7 +27,7 @@ export type PipelineStatus =
   | 'won'
   | 'filtered';
 
-export type EmailFoundVia = 'pattern_cache' | 'smtp_permutation' | 'external' | 'hunter' | 'findymail_catchall';
+export type EmailFoundVia = 'pattern_cache' | 'smtp_permutation' | 'external' | 'hunter' | 'apollo' | 'findymail_catchall';
 
 export interface DomainPattern {
   domain: string;
