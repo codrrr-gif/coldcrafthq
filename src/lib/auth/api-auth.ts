@@ -20,10 +20,16 @@ export function requireSecret(req: NextRequest): NextResponse | null {
     return NextResponse.json({ error: 'Server misconfigured' }, { status: 503 });
   }
   const authHeader = req.headers.get('authorization');
-  if (authHeader !== `Bearer ${secret}`) {
-    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-  }
-  return null; // null = authorized
+  if (authHeader === `Bearer ${secret}`) return null;
+
+  // Instantly and other webhooks can't send Bearer tokens — support alternatives
+  const querySecret = req.nextUrl.searchParams.get('secret');
+  if (querySecret === secret) return null;
+
+  const headerSecret = req.headers.get('x-webhook-secret');
+  if (headerSecret === secret) return null;
+
+  return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
 }
 
 // For Vapi webhooks (uses x-vapi-secret header)

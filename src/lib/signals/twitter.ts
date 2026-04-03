@@ -31,6 +31,42 @@ const NOISE_PATTERNS = [
   'follow and', 'like and', '#ad', 'sponsored',
 ];
 
+// Known VC/media accounts — their tweets are about OTHER companies, not themselves
+const VC_MEDIA_PATTERNS = [
+  'vc', 'ventures', 'capital', 'partners', 'invest', 'fund',
+  'news', 'startup', 'techcrunch', 'crunch', 'pulse', 'saas news',
+  'media', 'journal', 'daily', 'insider', 'arctic',
+];
+
+function isVcOrMedia(name: string): boolean {
+  const lower = name.toLowerCase();
+  return VC_MEDIA_PATTERNS.some(p => lower.includes(p));
+}
+
+// Extract the funded company name from tweet text
+// e.g. "Acme Corp raises $5M Series A" → "Acme Corp"
+function extractFundedCompany(text: string): string | null {
+  const patterns = [
+    // "CompanyName raises $XM", "CompanyName closes $XM", "CompanyName secures $XM"
+    /(?:^|[.!]\s*)([A-Z][\w.&\- ]{1,40}?)\s+(?:raises?|closed?s?|secures?|announced?|lands?)\s+\$[\d.]+[MBmb]/,
+    // "CompanyName, a ..., raised $XM"
+    /(?:^|[.!]\s*)([A-Z][\w.&\- ]{1,40}?),\s+(?:a|an|the)\s+[\w\s,-]+(?:raised?|closed?)\s+\$[\d.]+[MBmb]/,
+    // "$XM for CompanyName" / "$XM in CompanyName"
+    /\$[\d.]+[MBmb]\s+(?:for|in|into)\s+([A-Z][\w.&\- ]{1,40})/,
+    // "Congrats to CompanyName" / "Excited about CompanyName"
+    /(?:congrats?(?:ulations)?|excited about|proud to back)\s+(?:to\s+)?@?([A-Z][\w.&\- ]{1,40})/i,
+  ];
+
+  for (const pattern of patterns) {
+    const match = text.match(pattern);
+    if (match?.[1]) {
+      const name = match[1].trim().replace(/[,.]$/, '');
+      if (name.length >= 2 && name.length <= 40) return name;
+    }
+  }
+  return null;
+}
+
 // Minimum followers to filter out noise accounts
 const MIN_FOLLOWERS = 500;
 
@@ -75,13 +111,24 @@ export function parseTwitterSignals(items: ApifyDatasetItem[]): ParsedSignal[] {
     if (seenDomains.has(dedupeKey)) continue;
     seenDomains.add(dedupeKey);
 
-    // Truncate tweet for headline
+    // For funding tweets from VCs/media, extract the actual funded company name
     const originalText = String(item.text || item.full_text || item.tweet || '');
+    let companyName = authorName;
+    if (signalType === 'funding' && isVcOrMedia(authorName)) {
+      const extracted = extractFundedCompany(originalText);
+      if (extracted) {
+        companyName = extracted;
+      } else {
+        // Can't determine the funded company — skip this garbage signal
+        continue;
+      }
+    }
+
     const headline = `@${authorName}: ${originalText.slice(0, 120)}${originalText.length > 120 ? '...' : ''}`;
 
     signals.push({
       signal_type: signalType,
-      company_name: authorName,
+      company_name: companyName,
       company_domain: domain,
       headline,
       signal_url: String(item.url || item.tweet_url || `https://x.com/${author.username || user.screen_name}/status/${item.id}` || ''),

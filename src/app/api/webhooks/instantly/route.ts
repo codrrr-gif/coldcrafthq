@@ -18,7 +18,6 @@
 
 import { NextRequest, NextResponse } from 'next/server';
 import { supabase } from '@/lib/supabase/client';
-import { routeInboundReply } from '@/lib/conversation/auto-router';
 import { getThread, tagLead, deleteLead, blockEmail } from '@/lib/instantly';
 import { categorizeReply } from '@/lib/ai/categorize';
 import { draftReply } from '@/lib/ai/draft-reply';
@@ -385,6 +384,31 @@ export async function POST(req: NextRequest) {
       }
     }
 
+    // Update pipeline_leads status — this feeds the learning/ICP-learner modules
+    try {
+      if (category === 'interested') {
+        await supabase
+          .from('pipeline_leads')
+          .update({ status: 'replied', updated_at: new Date().toISOString() })
+          .eq('email', lead_email)
+          .in('status', ['pushed', 'contacted']);
+      } else if (category === 'hard_no') {
+        await supabase
+          .from('pipeline_leads')
+          .update({ status: 'opted_out', updated_at: new Date().toISOString() })
+          .eq('email', lead_email)
+          .in('status', ['pushed', 'contacted']);
+      } else if (category === 'soft_no' || category === 'custom') {
+        await supabase
+          .from('pipeline_leads')
+          .update({ status: 'replied', updated_at: new Date().toISOString() })
+          .eq('email', lead_email)
+          .in('status', ['pushed', 'contacted']);
+      }
+    } catch (err) {
+      console.error('[webhook] Failed to update pipeline_leads status:', err);
+    }
+
     // Signal performance feedback loop — track which signals produce replies
     recordReplyFeedback(lead_email, category).catch(console.error);
 
@@ -429,18 +453,8 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    // Route inbound replies through conversation intelligence
-    const eventType = String(payload.event_type || payload.type || '');
-    if (eventType === 'reply_received' || eventType === 'email_reply' || eventType === 'REPLY' || reply_text) {
-      if (reply_text) {
-        routeInboundReply({
-          leadId: null,
-          channel: 'email',
-          replyText: reply_text,
-          fromEmail: lead_email,
-        }).catch(console.error);
-      }
-    }
+    // Duplicate classification path removed — was burning 4x Claude API calls per reply
+    // with a separate taxonomy (7 categories vs 17 sub-categories) that was never used.
 
     return NextResponse.json({
       success: true,

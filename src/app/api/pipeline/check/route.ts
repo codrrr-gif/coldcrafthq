@@ -17,7 +17,7 @@ import { parseProductHuntSignals } from '@/lib/signals/product-hunt';
 import { parseTwitterSignals } from '@/lib/signals/twitter';
 import { parseCrunchbaseActivitySignals } from '@/lib/signals/crunchbase-activity';
 import { filterSignalByIcp } from '@/lib/signals/icp-filter';
-import { isBlockedDomain } from '@/lib/pipeline/domain-quality';
+import { isBlockedDomain, isStaffingCompany } from '@/lib/pipeline/domain-quality';
 import { scoreSignal, MIN_SIGNAL_SCORE } from '@/lib/signals/scorer';
 import { hasRecentSignal, hasActivePipelineLead } from '@/lib/signals/deduplicator';
 import { resolveDomain } from '@/lib/signals/domain-resolver';
@@ -88,6 +88,9 @@ async function handler() {
 
         // Quality gate: reject job boards, URL shorteners, enterprise giants, invalid domains
         if (isBlockedDomain(signal.company_domain)) continue;
+
+        // Filter staffing/recruiting firms — they post jobs on behalf of clients, not themselves
+        if (isStaffingCompany(signal.company_name, signal.company_domain)) continue;
 
         if (signal.company_domain) {
           const recent = await hasRecentSignal(signal.company_domain, signal.signal_type);

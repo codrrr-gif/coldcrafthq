@@ -16,6 +16,61 @@ import { addToWatchlist } from '@/lib/champions/watchlist';
 import { syncLeadToCrm, logActivityToClose } from '@/lib/crm/close-sync';
 import { calculateCompositeScore } from '@/lib/pipeline/composite-scorer';
 
+// Quick company pre-enrichment via Perplexity — gets industry/size to filter non-ICP
+// before burning credits on contact finding and email lookup
+async function preEnrichCompany(
+  companyName: string,
+  companyDomain: string,
+): Promise<{ industry: string | null; size: string | null; location: string | null; skip: boolean; reason?: string }> {
+  const apiKey = process.env.PERPLEXITY_API_KEY;
+  if (!apiKey) return { industry: null, size: null, location: null, skip: false };
+
+  try {
+    const res = await fetch('https://api.perplexity.ai/chat/completions', {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${apiKey}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        model: 'sonar',
+        messages: [{
+          role: 'user',
+          content: `What does ${companyName} (${companyDomain}) do? Return ONLY JSON:
+{"industry": "...", "employee_range": "1-10|11-50|51-200|201-500|500+|unknown", "country": "US|UK|CA|AU|DE|...|unknown", "is_b2b": true/false}
+If unsure, use "unknown". Do NOT make up data.`,
+        }],
+        max_tokens: 100,
+      }),
+      signal: AbortSignal.timeout(10000),
+    });
+
+    if (!res.ok) return { industry: null, size: null, location: null, skip: false };
+
+    const data = await res.json();
+    const text: string = data.choices?.[0]?.message?.content || '';
+    const match = text.match(/\{[\s\S]*?\}/);
+    if (!match) return { industry: null, size: null, location: null, skip: false };
+
+    const parsed = JSON.parse(match[0]);
+
+    // Filter non-B2B companies
+    if (parsed.is_b2b === false) {
+      return { industry: parsed.industry, size: parsed.employee_range, location: parsed.country, skip: true, reason: 'non_b2b' };
+    }
+
+    // Filter non-target geographies
+    const targetGeos = ['US', 'USA', 'UK', 'GB', 'CA', 'AU', 'US/UK', 'US/CA'];
+    if (parsed.country && parsed.country !== 'unknown' && !targetGeos.some(g => parsed.country?.toUpperCase().includes(g))) {
+      return { industry: parsed.industry, size: parsed.employee_range, location: parsed.country, skip: true, reason: 'non_target_geo' };
+    }
+
+    return { industry: parsed.industry || null, size: parsed.employee_range || null, location: parsed.country || null, skip: false };
+  } catch {
+    return { industry: null, size: null, location: null, skip: false };
+  }
+}
+
 // Fallback contact finder for job posting signals.
 // If standard contact finder fails, use the job posting headline to ask
 // Perplexity for the hiring manager or their boss.
@@ -79,6 +134,23 @@ export async function processPipelineLead(lead: PipelineLead): Promise<void> {
   const { id, company_name, company_domain, signal_type, signal_summary, signal_date } = lead;
 
   try {
+    // Step 0: Company pre-enrichment — filter non-ICP before expensive enrichment
+    if (!lead.company_industry) {
+      const enrichment = await preEnrichCompany(company_name || '', company_domain);
+      if (enrichment.skip) {
+        await updateLead(id, { status: 'filtered', failure_reason: enrichment.reason || 'non_icp' });
+        return;
+      }
+      // Store enrichment data for composite scoring
+      if (enrichment.industry || enrichment.size || enrichment.location) {
+        await updateLead(id, {
+          company_industry: enrichment.industry,
+          company_size: enrichment.size,
+          company_location: enrichment.location,
+        } as Partial<PipelineLead>);
+      }
+    }
+
     // Step 1: Find decision maker (skip if already found on a previous run)
     let contact: { first_name: string; last_name: string; title: string; linkedin_url: string | null };
     if (lead.first_name && lead.last_name) {

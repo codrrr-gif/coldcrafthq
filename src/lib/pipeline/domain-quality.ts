@@ -1,6 +1,35 @@
 // src/lib/pipeline/domain-quality.ts
 // Filters out domains that waste pipeline capacity.
 
+// Staffing/recruiting firms — they post jobs on behalf of clients, not for themselves
+const STAFFING_KEYWORDS = [
+  'staffing', 'recruiting', 'recruitment', 'recruiter', 'headhunt',
+  'executive search', 'search partners', 'talent acqui', 'talent group',
+  'placement', 'search group', 'personnel', 'employment agency', 'temp agency',
+  'jobs.', 'remote jobs', ' jobs',
+];
+
+const STAFFING_DOMAINS = new Set([
+  'roberthalf.com', 'randstad.com', 'adecco.com', 'manpowergroup.com',
+  'kellyservices.com', 'hays.com', 'michaelpage.com', 'pagepersonnel.com',
+  'kforce.com', 'insightglobal.com', 'teksystems.com', 'spherion.com',
+  'aerotek.com', 'expresspros.com', 'snatchjobs.sg', 'ajuliaexecutivesearch.com',
+  'guidedsearchpartners.com', 'taurussearch.com', '24seventalent.com',
+  'prestigestaffing.com', 'bivoh.com', 'dsjglobal.com', 'closedwontalent.com',
+  'vertopeople.com', 'chaseandassociates.com', 'seven-exec.com',
+  'spheredigitalrecruitment.com', 'thetechrecruiters.com', 'jobgether.com',
+]);
+
+export function isStaffingCompany(companyName: string | null, domain: string): boolean {
+  if (STAFFING_DOMAINS.has(domain.toLowerCase().trim())) return true;
+
+  if (companyName) {
+    const name = companyName.toLowerCase();
+    return STAFFING_KEYWORDS.some(kw => name.includes(kw));
+  }
+  return false;
+}
+
 // Job boards, URL shorteners, and aggregator sites — never actual companies
 const BLOCKED_DOMAINS = new Set([
   // Job boards
@@ -10,9 +39,11 @@ const BLOCKED_DOMAINS = new Set([
   'zobjobs.com', 'wellfound.com', 'angel.co', 'otta.com',
   // URL shorteners / aggregators
   'dlvr.it', 'bit.ly', 't.co', 'buff.ly', 'ow.ly', 'tinyurl.com',
-  // News / media
+  // News / media / VC blogs
   'techcrunch.com', 'bloomberg.com', 'reuters.com', 'forbes.com',
   'businessinsider.com', 'cnbc.com', 'wsj.com', 'nytimes.com',
+  'arcticstartup.com', 'pulse2.com', 'thesaasnews.com', 'fundable.com',
+  'crunchbase.com', 'pitchbook.com', 'venturebeat.com', 'sifted.eu',
 ]);
 
 // Enterprise giants with 10k+ employees — cold email doesn't work at this scale
