@@ -37,8 +37,7 @@ async function queryPerplexity(query: string): Promise<string> {
   });
 
   if (!res.ok) {
-    const slack = await import('./slack');
-    slack.trackServiceFailure('Perplexity', new Error(`${res.status} ${res.statusText}`)).catch(() => {});
+    console.error(`[perplexity] API error: ${res.status} ${res.statusText}`);
     return '';
   }
   const data = await res.json();
