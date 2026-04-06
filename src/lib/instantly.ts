@@ -52,17 +52,39 @@ export async function getThread(campaignId: string, leadEmail: string): Promise<
 }
 
 // Send a reply through Instantly
+// v2 API requires reply_to_uuid — the UUID of the email we're replying to.
+// We fetch the thread first to resolve it.
 export async function sendReply(
   campaignId: string,
   leadEmail: string,
   replyBody: string
 ): Promise<{ success: boolean; data?: Record<string, unknown>; error?: string }> {
+  // Step 1: Get the UUID of the last email in the thread
+  const threadRes = await fetch(
+    `${API_BASE}/emails?campaign_id=${campaignId}&email=${encodeURIComponent(leadEmail)}&limit=1`,
+    { headers: headers(leadEmail), signal: AbortSignal.timeout(15000) }
+  );
+
+  if (!threadRes.ok) {
+    const text = await threadRes.text();
+    return { success: false, error: `Failed to fetch thread for reply UUID: ${threadRes.status}: ${text}` };
+  }
+
+  const threadData = await threadRes.json();
+  const emails = threadData.data || threadData.items || threadData || [];
+  const lastEmail = Array.isArray(emails) ? emails[0] : null;
+  const replyToUuid = lastEmail?.id || lastEmail?.uuid || lastEmail?.email_id;
+
+  if (!replyToUuid) {
+    return { success: false, error: 'Could not resolve reply_to_uuid — no emails found in thread' };
+  }
+
+  // Step 2: Send the reply using the resolved UUID
   const res = await fetch(`${API_BASE}/emails/reply`, {
     method: 'POST',
     headers: headers(leadEmail),
     body: JSON.stringify({
-      campaign_id: campaignId,
-      reply_to_email: leadEmail,
+      reply_to_uuid: replyToUuid,
       body: replyBody,
     }),
     signal: AbortSignal.timeout(15000),
