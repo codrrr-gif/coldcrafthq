@@ -30,7 +30,7 @@ function headers(seed?: string) {
 // Get full email thread for a lead
 export async function getThread(campaignId: string, leadEmail: string): Promise<ThreadMessage[]> {
   const res = await fetch(
-    `${API_BASE}/emails?campaign_id=${campaignId}&email=${encodeURIComponent(leadEmail)}&limit=50`,
+    `${API_BASE}/emails?campaign_id=${campaignId}&lead=${encodeURIComponent(leadEmail)}&limit=50`,
     { headers: headers(leadEmail), signal: AbortSignal.timeout(15000) }
   );
 
@@ -60,8 +60,9 @@ export async function sendReply(
   replyBody: string
 ): Promise<{ success: boolean; data?: Record<string, unknown>; error?: string }> {
   // Step 1: Fetch the last email in the thread to get uuid, eaccount, subject
+  // IMPORTANT: v2 API filters by `lead=` (the lead's email), not `email=`
   const threadRes = await fetch(
-    `${API_BASE}/emails?campaign_id=${campaignId}&email=${encodeURIComponent(leadEmail)}&limit=1`,
+    `${API_BASE}/emails?campaign_id=${campaignId}&lead=${encodeURIComponent(leadEmail)}&limit=1`,
     { headers: headers(leadEmail), signal: AbortSignal.timeout(15000) }
   );
 
@@ -76,6 +77,11 @@ export async function sendReply(
 
   if (!lastEmail?.id) {
     return { success: false, error: 'Could not resolve reply_to_uuid — no emails found in thread' };
+  }
+
+  // Safety check: verify the thread belongs to this lead
+  if (lastEmail.lead && lastEmail.lead !== leadEmail) {
+    return { success: false, error: `Thread mismatch: expected ${leadEmail} but got ${lastEmail.lead}` };
   }
 
   // Step 2: Send the reply with all required v2 fields
