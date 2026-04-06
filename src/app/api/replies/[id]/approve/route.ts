@@ -27,9 +27,9 @@ export async function POST(
     return NextResponse.json({ error: 'Already sent' }, { status: 400 });
   }
 
-  const replyText = reply.ai_reply;
+  const replyText = reply.final_reply || reply.revised_reply || reply.ai_reply;
   if (!replyText) {
-    return NextResponse.json({ error: 'No AI reply to send' }, { status: 400 });
+    return NextResponse.json({ error: 'No reply to send' }, { status: 400 });
   }
 
   // Update status to approved

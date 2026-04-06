@@ -6,7 +6,7 @@
 
 import { supabase } from '../supabase/client';
 import { sendReply } from '../instantly';
-import { notifyAutoSend, notifyFailedSend } from '../slack';
+import { notifyAutoSend, notifyFailedSend, trackServiceFailure } from '../slack';
 import type { SubCategory } from './playbooks';
 import { PLAYBOOKS } from './playbooks';
 import { getEffectiveThreshold } from './outcomes';
@@ -55,11 +55,12 @@ export async function executeAutoSend(
     .eq('id', replyId)
     .single();
 
-  if (!reply || reply.status !== 'pending' || !reply.ai_reply) return false;
+  const replyText = reply?.final_reply || reply?.revised_reply || reply?.ai_reply;
+  if (!reply || reply.status !== 'pending' || !replyText) return false;
 
   // Validate reply content before sending
   const { validateReplyContent } = await import('./reply-validator');
-  const validation = validateReplyContent(reply.ai_reply);
+  const validation = validateReplyContent(replyText);
   if (!validation.valid) {
     console.warn(`[auto-send] Content validation failed for ${replyId}: ${validation.reason}`);
     await supabase
@@ -74,7 +75,7 @@ export async function executeAutoSend(
     const result = await sendReply(
       reply.instantly_campaign_id,
       reply.lead_email,
-      reply.ai_reply
+      replyText
     );
 
     const newStatus = result.success ? 'sent' : 'failed';
@@ -83,7 +84,7 @@ export async function executeAutoSend(
       .from('replies')
       .update({
         status: newStatus,
-        final_reply: reply.ai_reply,
+        final_reply: replyText,
         auto_sent: true,
         auto_send_reason: reason,
         send_result: result,
@@ -102,6 +103,7 @@ export async function executeAutoSend(
       );
     } else {
       await notifyFailedSend(reply.lead_email, result.error || 'Unknown error');
+      trackServiceFailure('Instantly', new Error(result.error || 'Send failed')).catch(() => {});
     }
 
     return result.success;

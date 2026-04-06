@@ -62,7 +62,8 @@ Provide a concise analysis (2-3 sentences) of what the human corrected — tone,
 export async function addKnowledgeEntry(
   title: string,
   content: string,
-  category: string
+  category: string,
+  clientId: string = '00000000-0000-0000-0000-000000000001'
 ): Promise<{ id: string } | null> {
   const embedding = await generateEmbedding(`${title}\n${content}`);
 
@@ -73,6 +74,7 @@ export async function addKnowledgeEntry(
       content,
       category,
       embedding,
+      client_id: clientId,
     })
     .select('id')
     .single();
