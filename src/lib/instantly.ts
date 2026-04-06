@@ -52,14 +52,14 @@ export async function getThread(campaignId: string, leadEmail: string): Promise<
 }
 
 // Send a reply through Instantly
-// v2 API requires reply_to_uuid — the UUID of the email we're replying to.
-// We fetch the thread first to resolve it.
+// v2 API requires: reply_to_uuid, eaccount, subject, body (as {html, text}).
+// We fetch the thread first to resolve these from the last email.
 export async function sendReply(
   campaignId: string,
   leadEmail: string,
   replyBody: string
 ): Promise<{ success: boolean; data?: Record<string, unknown>; error?: string }> {
-  // Step 1: Get the UUID of the last email in the thread
+  // Step 1: Fetch the last email in the thread to get uuid, eaccount, subject
   const threadRes = await fetch(
     `${API_BASE}/emails?campaign_id=${campaignId}&email=${encodeURIComponent(leadEmail)}&limit=1`,
     { headers: headers(leadEmail), signal: AbortSignal.timeout(15000) }
@@ -67,25 +67,27 @@ export async function sendReply(
 
   if (!threadRes.ok) {
     const text = await threadRes.text();
-    return { success: false, error: `Failed to fetch thread for reply UUID: ${threadRes.status}: ${text}` };
+    return { success: false, error: `Failed to fetch thread: ${threadRes.status}: ${text}` };
   }
 
   const threadData = await threadRes.json();
   const emails = threadData.data || threadData.items || threadData || [];
   const lastEmail = Array.isArray(emails) ? emails[0] : null;
-  const replyToUuid = lastEmail?.id || lastEmail?.uuid || lastEmail?.email_id;
 
-  if (!replyToUuid) {
+  if (!lastEmail?.id) {
     return { success: false, error: 'Could not resolve reply_to_uuid — no emails found in thread' };
   }
 
-  // Step 2: Send the reply using the resolved UUID
+  // Step 2: Send the reply with all required v2 fields
+  const htmlBody = replyBody.replace(/\n/g, '<br>');
   const res = await fetch(`${API_BASE}/emails/reply`, {
     method: 'POST',
     headers: headers(leadEmail),
     body: JSON.stringify({
-      reply_to_uuid: replyToUuid,
-      body: replyBody,
+      reply_to_uuid: lastEmail.id,
+      eaccount: lastEmail.eaccount,
+      subject: lastEmail.subject || 'Re:',
+      body: { html: htmlBody, text: replyBody },
     }),
     signal: AbortSignal.timeout(15000),
   });
