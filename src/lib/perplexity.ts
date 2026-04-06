@@ -4,6 +4,8 @@
 // Not surface-level fluff. Structured, actionable intelligence
 // that the AI can actually USE to write personalized replies.
 
+import { trackServiceFailure } from './slack';
+
 export interface ResearchResult {
   company_overview: string;
   pain_signals: string;
@@ -37,7 +39,6 @@ async function queryPerplexity(query: string): Promise<string> {
   });
 
   if (!res.ok) {
-    const { trackServiceFailure } = await import('@/lib/slack');
     trackServiceFailure('Perplexity', new Error(`${res.status} ${res.statusText}`)).catch(() => {});
     return '';
   }
