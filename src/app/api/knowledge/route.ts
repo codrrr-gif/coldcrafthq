@@ -39,7 +39,7 @@ export async function POST(req: NextRequest) {
   const result = await addKnowledgeEntry(
     title.trim(),
     content.trim(),
-    category || 'general'
+    category || 'company_info'
   );
 
   if (!result) {
