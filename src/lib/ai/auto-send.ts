@@ -6,7 +6,7 @@
 
 import { supabase } from '../supabase/client';
 import { sendReply } from '../instantly';
-import { notifyAutoSend, notifyFailedSend, trackServiceFailure } from '../slack';
+import { notifyAutoSend, notifyFailedSend } from '../slack';
 import type { SubCategory } from './playbooks';
 import { PLAYBOOKS } from './playbooks';
 import { getEffectiveThreshold } from './outcomes';
@@ -103,7 +103,7 @@ export async function executeAutoSend(
       );
     } else {
       await notifyFailedSend(reply.lead_email, result.error || 'Unknown error');
-      trackServiceFailure('Instantly', new Error(result.error || 'Send failed')).catch(() => {});
+      console.error(`[auto-send] Instantly send failed: ${result.error}`);
     }
 
     return result.success;

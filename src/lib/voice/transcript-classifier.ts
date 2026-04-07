@@ -3,6 +3,12 @@
 // Replaces brittle keyword matching with AI-powered classification.
 
 import Anthropic from '@anthropic-ai/sdk';
+// trackServiceFailure loaded dynamically to avoid Vercel build cache issue
+async function trackServiceFailure(service: string, error: unknown) {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const slack: Record<string, any> = await import('@/lib/slack');
+  return slack.trackServiceFailure(service, error);
+}
 
 const client = new Anthropic();
 
@@ -56,6 +62,7 @@ Respond with ONLY the outcome name, nothing else.`,
     return VALID_OUTCOMES.includes(raw as VoiceOutcome) ? (raw as VoiceOutcome) : 'no_answer';
   } catch (err) {
     console.error('[transcript-classifier] Classification failed:', err);
+    trackServiceFailure('Claude (transcript-classifier)', err).catch(() => {});
     // Fallback to duration-based heuristic
     if (durationSeconds < 5) return 'no_answer';
     if (durationSeconds < 20) return 'voicemail';
