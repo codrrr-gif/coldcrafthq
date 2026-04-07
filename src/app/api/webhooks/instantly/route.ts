@@ -147,9 +147,7 @@ export async function POST(req: NextRequest) {
       // === HARD NO: Auto-handle immediately ===
       // Must remove from campaign + blocklist to protect sender reputation
       try {
-        await tagLead(lead_email, 'HARD NO');
-
-        // If webhook didn't include campaign_id, look it up from pipeline_leads
+        // Delete from campaign FIRST — this is the critical action
         let deleteCampaignId = campaign_id;
         if (!deleteCampaignId) {
           const { data: pl } = await supabase
@@ -165,16 +163,23 @@ export async function POST(req: NextRequest) {
         if (deleteCampaignId) {
           await deleteLead(deleteCampaignId, lead_email);
         }
-        await blockEmail(lead_email);
         status = 'skipped';
+
+        // Tag and block are best-effort — don't let failures prevent deletion
+        tagLead(lead_email, 'HARD NO').catch((err) =>
+          console.warn('[webhook] tagLead failed (non-blocking):', err)
+        );
+        blockEmail(lead_email).catch((err) =>
+          console.warn('[webhook] blockEmail failed (non-blocking):', err)
+        );
 
         // Alert on legal threats
         if (subCategory === 'hard_no.legal_threat') {
           await notifyLegalThreat(lead_email, reply_text);
         }
       } catch (err) {
-        console.error('Failed to handle hard no:', err);
-        status = 'pending'; // Fall back to human review
+        console.error('Failed to delete lead (hard no):', err);
+        status = 'pending'; // Fall back to human review only if delete fails
       }
     } else if (category === 'interested' || category === 'soft_no' || category === 'custom') {
       // === OOO: Remove from campaign (no point emailing someone on leave) ===
