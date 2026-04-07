@@ -505,11 +505,26 @@ async function handleTool(name: string, args: Record<string, unknown>): Promise<
     }
 
     case 'tag_lead': {
-      await req('/leads/label/assign', {
+      // v2: look up or create the label, then assign via interest-status
+      const labelsData = unwrap(await req('/lead-labels'));
+      const labels = Array.isArray(labelsData) ? labelsData : [];
+      let labelId = labels.find(
+        (l: Record<string, string>) => l.label?.toLowerCase() === String(args.label).toLowerCase()
+      )?.id;
+
+      if (!labelId) {
+        const created = await req<Record<string, string>>('/lead-labels', {
+          method: 'POST',
+          body: JSON.stringify({ label: args.label }),
+        });
+        labelId = created.id;
+      }
+
+      await req('/leads/update-interest-status', {
         method: 'POST',
-        body: JSON.stringify({ email: args.email, label: args.label }),
+        body: JSON.stringify({ lead_email: args.email, interest_status: labelId }),
       });
-      return JSON.stringify({ success: true, email: args.email, label: args.label });
+      return JSON.stringify({ success: true, email: args.email, label: args.label, label_id: labelId });
     }
 
     case 'list_lead_labels': {
@@ -537,7 +552,7 @@ async function handleTool(name: string, args: Record<string, unknown>): Promise<
     case 'get_email_thread': {
       const limit = Number(args.limit || 50);
       return JSON.stringify(unwrap(
-        await req(`/emails?campaign_id=${args.campaign_id}&email=${encodeURIComponent(String(args.email))}&limit=${limit}`)
+        await req(`/emails?campaign_id=${args.campaign_id}&lead=${encodeURIComponent(String(args.email))}&limit=${limit}`)
       ), null, 2);
     }
 
@@ -580,9 +595,9 @@ async function handleTool(name: string, args: Record<string, unknown>): Promise<
     // ── BLOCKLIST ─────────────────────────────────────────────────────────────
 
     case 'block_email': {
-      return JSON.stringify(await req('/blocklist', {
+      return JSON.stringify(await req('/block-lists-entries', {
         method: 'POST',
-        body: JSON.stringify({ email: args.email }),
+        body: JSON.stringify({ bl_value: args.email }),
       }), null, 2);
     }
 

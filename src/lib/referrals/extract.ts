@@ -7,7 +7,7 @@
 // ============================================
 
 import { supabase } from '@/lib/supabase/client';
-import { addLeadsToCampaign } from '@/lib/instantly';
+import { addLeadsToCampaign, tagLead, deleteLead } from '@/lib/instantly';
 import { getCampaignId } from '@/lib/enrichment/campaign-mapper';
 import type { SignalType } from '@/lib/gtm/types';
 import { findEmail } from '@/lib/finder';
@@ -30,13 +30,16 @@ export function extractReferral(
   replyText: string,
   originalLeadCompany: string | null
 ): ExtractedReferral | null {
-  const emails = replyText.match(EMAIL_RE);
-  const referralEmail = emails?.[0] || null;
+  const rawEmails = replyText.match(EMAIL_RE);
+  // Strip trailing dots from sentence punctuation (e.g. "email sara@co.com.")
+  const emails = rawEmails?.map(e => e.replace(/\.+$/, '')) || null;
+  // Skip the sender's own email if present — take the first that's different
+  const referralEmail = emails?.find(e => !originalLeadCompany || !e.endsWith(`@${originalLeadCompany}`)) || emails?.[0] || null;
 
   // Try to extract a name near referral keywords
   const namePatterns = [
-    /(?:talk to|reach out to|email|contact|speak with|connect with)\s+(?:our\s+)?(?:(\w+(?:\s+\w+)?))/i,
-    /(?:forward(?:ed|ing)?.*?to)\s+(?:our\s+)?(\w+(?:\s+\w+)?)/i,
+    /(?:talk to|reach out to|emails?\s+to|email|contact|speak with|connect with|direct\s+(?:your\s+)?(?:emails?\s+)?to)[:\s]+(?:our\s+)?(\w+(?:\s+\w+)?)/i,
+    /(?:forward(?:ed|ing)?.*?to)[:\s]+(?:our\s+)?(\w+(?:\s+\w+)?)/i,
     /(\w+(?:\s+\w+)?)\s+(?:handles?|manages?|runs?|oversees?|is in charge of)\s+/i,
   ];
 
@@ -92,20 +95,27 @@ export async function processReferral(params: {
   signalType: string | null;
   companyDomain: string | null;
   personalizedOpener: string | null;
+  sourceCampaignId: string | null;
 }): Promise<{ success: boolean; email?: string; error?: string }> {
   const { referral, sourceLeadEmail, signalType, companyDomain } = params;
 
   let email = referral.email;
 
+  // Resolve company domain: source lead → referral email → source email
+  const domain = companyDomain
+    || (email ? email.split('@')[1] : null)
+    || sourceLeadEmail.split('@')[1]
+    || null;
+
   // If we have a name but no email, try to find one
-  if (!email && referral.name && companyDomain) {
+  if (!email && referral.name && (companyDomain || domain)) {
     const parts = referral.name.split(/\s+/);
     const firstName = parts[0] || '';
     const lastName = parts.slice(1).join(' ') || '';
 
     if (firstName && lastName) {
       try {
-        const result = await findEmail(firstName, lastName, companyDomain);
+        const result = await findEmail(firstName, lastName, domain || companyDomain!);
         if (result.found && result.email) {
           email = result.email;
         }
@@ -170,7 +180,7 @@ export async function processReferral(params: {
     last_name: (referral.name || '').split(/\s+/).slice(1).join(' ') || null,
     title: referral.title,
     company_name: referral.company,
-    company_domain: companyDomain,
+    company_domain: domain || companyDomain || email.split('@')[1],
     signal_type: signalType || 'referral',
     signal_summary: `Referral from ${sourceLeadEmail}`,
     status: campaignId ? 'pushed' : 'pending',
@@ -179,11 +189,30 @@ export async function processReferral(params: {
     client_id: '00000000-0000-0000-0000-000000000001',
   });
 
+  // Remove original lead from campaign — they referred us elsewhere
+  if (params.sourceCampaignId) {
+    try {
+      await deleteLead(params.sourceCampaignId, sourceLeadEmail);
+    } catch (err) {
+      console.error(`[referral] Failed to remove source lead ${sourceLeadEmail}:`, err);
+    }
+    // Tag is best-effort — don't let it block the referral flow
+    tagLead(sourceLeadEmail, 'referral-made').catch((err) =>
+      console.warn('[referral] tagLead failed (non-blocking):', err));
+  }
+
+  // Update source lead status in pipeline_leads
+  await supabase.from('pipeline_leads')
+    .update({ status: 'referred', updated_at: new Date().toISOString() })
+    .eq('email', sourceLeadEmail)
+    .in('status', ['pushed', 'contacted', 'replied']);
+
   await notifySlack(
     `*Referral auto-processed*\n` +
     `From: ${sourceLeadEmail} → ${email}\n` +
     `Name: ${referral.name || 'unknown'} | Title: ${referral.title || 'N/A'}\n` +
-    `${campaignId ? 'Pushed to campaign.' : 'Queued as pending (no campaign mapped).'}`,
+    `${campaignId ? 'Pushed to campaign.' : 'Queued as pending (no campaign mapped).'}\n` +
+    `Original lead tagged \`referral-made\` and removed from campaign.`,
     'info'
   );
 

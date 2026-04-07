@@ -114,7 +114,7 @@ export async function executeAutoSend(
     .from('replies')
     .update({
       status: 'approved',
-      final_reply: reply.ai_reply,
+      final_reply: replyText,
       auto_sent: true,
       auto_send_reason: reason,
       updated_at: new Date().toISOString(),

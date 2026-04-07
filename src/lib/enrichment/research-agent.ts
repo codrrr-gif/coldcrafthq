@@ -19,7 +19,7 @@ async function getOpenerExamples(signalType: SignalType): Promise<string> {
     );
     const { data } = await sb
       .from('opener_patterns')
-      .select('pattern_summary, example_opener')
+      .select('id, pattern_summary, example_opener, times_used')
       .eq('signal_type', signalType)
       .order('created_at', { ascending: false })
       .limit(3);
@@ -27,8 +27,8 @@ async function getOpenerExamples(signalType: SignalType): Promise<string> {
     if (!data?.length) return '';
 
     // Increment times_used in background
-    for (const row of data as Array<{ pattern_summary: string; example_opener: string; id?: string }>) {
-      if (row.id) sb.from('opener_patterns').update({ times_used: 1 }).eq('id', row.id).then(null, () => null);
+    for (const row of data as Array<{ pattern_summary: string; example_opener: string; id?: string; times_used?: number }>) {
+      if (row.id) sb.from('opener_patterns').update({ times_used: (row.times_used || 0) + 1 }).eq('id', row.id).then(null, () => null);
     }
 
     const examples = (data as Array<{ pattern_summary: string; example_opener: string }>)
@@ -108,7 +108,7 @@ Answer ALL of these in order, separated by "---":
     max_tokens: 600,
     messages: [{
       role: 'user',
-      content: `You are writing a cold email opening line. It must sound like a human who did their homework — not AI.
+      content: `You are writing a cold email opening line for a B2B outbound campaign. The prospect is Problem Aware — they know the pain but haven't actively sought a solution.
 
 SIGNAL: ${signalSummary}
 COMPANY: ${companyName}
@@ -124,16 +124,32 @@ CONTACT PROFILE:
 ${contactResearch}
 ${openerExamples}
 Write:
-1. A 1-sentence personalized opener for a cold email that naturally references the specific signal
+1. A personalized opener (UNDER 15 WORDS) that references the specific signal as a timeline hook. Enter the conversation already happening in their mind. Write from THEIR perspective — what they're experiencing, not what you observed.
 2. Three bullet pain points this company likely has RIGHT NOW given the signal
 3. Three opportunity signals (reasons they'd be receptive)
 4. A 2-sentence research summary
 
-Rules:
-- Opener must reference the SPECIFIC signal (funding amount, role they're hiring for, etc.)
-- No em dashes. No "I noticed". No "I came across". No "Congratulations on".
-- Sound like you follow the space, not like you scraped a database.
-- Be direct and specific.
+OPENER RULES:
+- UNDER 15 WORDS. This is a single punchy line, not a full sentence paragraph.
+- First word must NOT be "I" — start with their company, their situation, their world.
+- Use a timeline hook: tie the signal to a natural consequence or emerging need.
+- Reference the SPECIFIC signal detail (funding amount, exact role title, news headline).
+- Personalization hierarchy (aim highest): (1) something they personally said/built/shipped, (2) a specific challenge this signal creates for them, (3) their role + the signal, (4) company + signal.
+
+VOICE: Direct, specific, understated. Like a peer who follows their space closely. No hype, no flattery, no filler.
+
+BANNED PHRASES (instant reject):
+- No em dashes. No semicolons.
+- No "I noticed", "I came across", "I saw that", "I was researching"
+- No "Congratulations on", "Congrats on", "Exciting times", "Impressive"
+- No "I hope this finds you", "I wanted to reach out", "I'd love to"
+- No "leveraging", "synergies", "game-changer", "cutting-edge", "innovative"
+- No "It caught my eye", "Your recent", "I stumbled upon"
+
+GOOD opener examples:
+- "${companyName}'s Series B puts pressure on pipeline before the new hires ramp."
+- "Hiring a Head of Sales usually means the founder pipeline model hit its ceiling."
+- "Post-acquisition integrations almost always stall outbound for 3-6 months."
 
 Output as JSON: { "opener": "...", "pain_points": ["...", "...", "..."], "opportunity_signals": ["...", "...", "..."], "summary": "..." }`
     }],

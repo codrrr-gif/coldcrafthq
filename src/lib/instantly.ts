@@ -107,17 +107,68 @@ export async function sendReply(
   return { success: true, data };
 }
 
-// Tag a lead with a label
+// ── Lead label cache (per serverless instance) ──────────────────────────────
+let _labelCache: { id: string; label: string }[] | null = null;
+let _labelCacheTime = 0;
+const LABEL_CACHE_TTL = 5 * 60 * 1000; // 5 minutes
+
+async function getOrCreateLabelId(labelName: string, seed?: string): Promise<string> {
+  // Refresh cache if stale or empty
+  if (!_labelCache || Date.now() - _labelCacheTime > LABEL_CACHE_TTL) {
+    try {
+      const res = await fetch(`${API_BASE}/lead-labels`, {
+        headers: headers(seed),
+        signal: AbortSignal.timeout(10000),
+      });
+      if (res.ok) {
+        const data = await res.json();
+        _labelCache = (data.data || data.items || data || []).map(
+          (l: Record<string, string>) => ({ id: l.id, label: l.label })
+        );
+        _labelCacheTime = Date.now();
+      }
+    } catch {
+      // Cache miss — proceed to create
+    }
+  }
+
+  // Find existing label by name (case-insensitive)
+  const existing = _labelCache?.find(
+    (l) => l.label.toLowerCase() === labelName.toLowerCase()
+  );
+  if (existing) return existing.id;
+
+  // Create new label
+  const createRes = await fetch(`${API_BASE}/lead-labels`, {
+    method: 'POST',
+    headers: headers(seed),
+    body: JSON.stringify({ label: labelName }),
+    signal: AbortSignal.timeout(10000),
+  });
+
+  if (!createRes.ok) {
+    const text = await createRes.text();
+    throw new Error(`Failed to create label "${labelName}": ${createRes.status} ${text}`);
+  }
+
+  const newLabel = await createRes.json();
+  if (_labelCache) _labelCache.push({ id: newLabel.id, label: labelName });
+  return newLabel.id;
+}
+
+// Tag a lead with a label (v2: look up/create label, then assign via interest-status)
 export async function tagLead(
   leadEmail: string,
   label: string
 ): Promise<void> {
-  const res = await fetch(`${API_BASE}/leads/label/assign`, {
+  const labelId = await getOrCreateLabelId(label, leadEmail);
+
+  const res = await fetch(`${API_BASE}/leads/update-interest-status`, {
     method: 'POST',
     headers: headers(leadEmail),
     body: JSON.stringify({
-      email: leadEmail,
-      label,
+      lead_email: leadEmail,
+      interest_status: labelId,
     }),
     signal: AbortSignal.timeout(15000),
   });
@@ -149,33 +200,19 @@ export async function deleteLead(
   }
 }
 
-// Add email to blocklist
-// Note: Instantly v2 removed the /blocklist endpoint.
-// We try both v2 and v1 patterns, and log a warning if neither works.
-// The critical action is deleteLead — blocklist is a secondary safeguard.
+// Add email to blocklist (v2: POST /block-lists-entries with bl_value)
 export async function blockEmail(email: string): Promise<void> {
-  const endpoints = [
-    { url: `${API_BASE}/blocklist`, body: { email } },
-    { url: `${API_BASE}/block-list-entries`, body: { entries: [email], entry_type: 'email' } },
-  ];
+  const res = await fetch(`${API_BASE}/block-lists-entries`, {
+    method: 'POST',
+    headers: headers(email),
+    body: JSON.stringify({ bl_value: email }),
+    signal: AbortSignal.timeout(10000),
+  });
 
-  for (const ep of endpoints) {
-    try {
-      const res = await fetch(ep.url, {
-        method: 'POST',
-        headers: headers(email),
-        body: JSON.stringify(ep.body),
-        signal: AbortSignal.timeout(10000),
-      });
-      if (res.ok) return;
-    } catch {
-      // Try next endpoint
-    }
+  if (!res.ok) {
+    const text = await res.text();
+    throw new Error(`Instantly blockEmail failed: ${res.status} ${text}`);
   }
-
-  // Neither endpoint worked — log but don't throw.
-  // The lead is already deleted from the campaign which is the critical action.
-  console.warn(`[instantly] blockEmail: no working blocklist endpoint for ${email}. Lead was deleted from campaign but not blocklisted.`);
 }
 
 // List all campaigns in the workspace
@@ -294,10 +331,9 @@ export async function pauseCampaign(campaignId: string): Promise<boolean> {
 }
 
 export async function listSendingAccounts(): Promise<Array<{ email: string; daily_limit?: number }>> {
-  const key = getApiKey();
   // listSendingAccounts has no lead context — uses random key via getApiKey()
-  const res = await fetch('https://api.instantly.ai/api/v2/accounts?limit=100', {
-    headers: { Authorization: `Bearer ${key}` },
+  const res = await fetch(`${API_BASE}/accounts?limit=100`, {
+    headers: headers(),
     signal: AbortSignal.timeout(15000),
   });
   if (!res.ok) return [];

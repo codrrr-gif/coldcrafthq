@@ -69,14 +69,33 @@ function getCategoryPriority(category: string): string[] {
 }
 
 // Fetch training examples (human corrections) for this sub-category
-// eslint-disable-next-line @typescript-eslint/no-unused-vars
-async function getTrainingExamples(_subCategory: SubCategory): Promise<string> {
+async function getTrainingExamples(subCategory: SubCategory): Promise<string> {
   try {
-    const { data } = await supabase
+    // Try sub-category-specific examples first, fall back to all
+    const parentCategory = subCategory.split('.')[0];
+    let { data } = await supabase
       .from('training_examples')
       .select('original_ai_reply, revised_reply, reasoning')
+      .eq('sub_category', subCategory)
       .order('created_at', { ascending: false })
       .limit(3);
+
+    if (!data?.length) {
+      ({ data } = await supabase
+        .from('training_examples')
+        .select('original_ai_reply, revised_reply, reasoning')
+        .like('sub_category', `${parentCategory}.%`)
+        .order('created_at', { ascending: false })
+        .limit(3));
+    }
+
+    if (!data?.length) {
+      ({ data } = await supabase
+        .from('training_examples')
+        .select('original_ai_reply, revised_reply, reasoning')
+        .order('created_at', { ascending: false })
+        .limit(3));
+    }
 
     if (!data?.length) return '';
 

@@ -19,22 +19,28 @@ function closeHeaders() {
 }
 
 // Status → action mapping
+// tagLead/blockEmail are best-effort — failures must not crash the sync
 const STATUS_ACTIONS: Record<string, (email: string, campaignId: string | null) => Promise<void>> = {
   'Meeting Booked': async (email) => {
-    await tagLead(email, 'MEETING_BOOKED');
+    await tagLead(email, 'MEETING_BOOKED').catch((err) =>
+      console.warn('[reverseSync] tagLead failed (non-blocking):', err));
   },
   'Won': async (email, campaignId) => {
     if (campaignId) await deleteLead(campaignId, email).catch(() => {});
-    await tagLead(email, 'WON');
+    tagLead(email, 'WON').catch((err) =>
+      console.warn('[reverseSync] tagLead failed (non-blocking):', err));
   },
   'Not Interested': async (email, campaignId) => {
-    await tagLead(email, 'CLOSED_LOST');
     if (campaignId) await deleteLead(campaignId, email).catch(() => {});
+    tagLead(email, 'CLOSED_LOST').catch((err) =>
+      console.warn('[reverseSync] tagLead failed (non-blocking):', err));
   },
   'Bad Fit': async (email, campaignId) => {
-    await tagLead(email, 'BAD_FIT');
     if (campaignId) await deleteLead(campaignId, email).catch(() => {});
-    await blockEmail(email);
+    tagLead(email, 'BAD_FIT').catch((err) =>
+      console.warn('[reverseSync] tagLead failed (non-blocking):', err));
+    blockEmail(email).catch((err) =>
+      console.warn('[reverseSync] blockEmail failed (non-blocking):', err));
   },
   'Nurture': async (email) => {
     const nurtureId = process.env.CAMPAIGN_ID_NURTURE;
@@ -42,11 +48,13 @@ const STATUS_ACTIONS: Record<string, (email: string, campaignId: string | null) 
       const { addLeadsToCampaign } = await import('../instantly');
       await addLeadsToCampaign(nurtureId, [{ email }]);
     }
-    await tagLead(email, 'NURTURE');
+    tagLead(email, 'NURTURE').catch((err) =>
+      console.warn('[reverseSync] tagLead failed (non-blocking):', err));
   },
   'Unsubscribed': async (email, campaignId) => {
     if (campaignId) await deleteLead(campaignId, email).catch(() => {});
-    await blockEmail(email);
+    blockEmail(email).catch((err) =>
+      console.warn('[reverseSync] blockEmail failed (non-blocking):', err));
   },
 };
 
