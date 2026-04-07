@@ -13,6 +13,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { processTimeoutAutoSends } from '@/lib/ai/auto-send';
 import { evaluateSilentOutcomes, tuneThresholds } from '@/lib/ai/outcomes';
 import { runDailySequence } from '@/lib/orchestrator/sequence-runner';
+import { processDueFollowups } from '@/lib/followups/scheduler';
 import { acquireCronLock, releaseCronLock } from '@/lib/cron-lock';
 import { requireSecret } from '@/lib/auth/api-auth';
 
@@ -30,13 +31,17 @@ export async function GET(req: NextRequest) {
   }
 
   try {
-    const [autoSendResult, silenceCount, thresholdResult, sequenceResult] = await Promise.all([
-      processTimeoutAutoSends(),
+    const [autoSendResult, silenceCount, thresholdResult, sequenceResult, followupResult] = await Promise.all([
+      processTimeoutAutoSends().catch((err) => { console.error('[cron] auto-send failed:', err); return { processed: 0, sent: 0, failed: 0 }; }),
       evaluateSilentOutcomes().catch(() => 0),
       tuneThresholds().catch(() => ({ adjusted: 0 })),
       runDailySequence().catch((err) => {
         console.error('[cron] Sequence runner failed:', err);
         return { linkedin_connects: 0, linkedin_dms: 0, voice_calls: 0, job_changes: 0, heat_scores_updated: 0 };
+      }),
+      processDueFollowups().catch((err) => {
+        console.error('[cron] Follow-up processing failed:', err);
+        return { processed: 0, sent: 0, failed: 0 };
       }),
     ]);
 
@@ -57,6 +62,7 @@ export async function GET(req: NextRequest) {
         thresholds_adjusted: thresholdResult.adjusted,
       },
       sequence: sequenceResult,
+      followups: followupResult,
       timestamp: new Date().toISOString(),
     });
   } finally {

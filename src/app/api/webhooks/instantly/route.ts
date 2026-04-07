@@ -131,6 +131,19 @@ export async function POST(req: NextRequest) {
       console.error('Chain detection failed:', err);
     }
 
+    // Resolve client_id early — needed for knowledge base filtering in draftReply
+    let clientId = '00000000-0000-0000-0000-000000000001';
+    try {
+      const { data: pl } = await supabase
+        .from('pipeline_leads')
+        .select('client_id')
+        .eq('email', lead_email)
+        .not('client_id', 'is', null)
+        .limit(1)
+        .single();
+      if (pl?.client_id) clientId = pl.client_id;
+    } catch {}
+
     // Step 3: Route based on category
     let aiReply = '';
     let research = null;
@@ -199,25 +212,25 @@ export async function POST(req: NextRequest) {
           if (deleteCampaignId) {
             await deleteLead(deleteCampaignId, lead_email);
           }
-          await tagLead(lead_email, 'OOO');
           status = 'skipped';
+          tagLead(lead_email, 'OOO').catch((err) =>
+            console.warn('[webhook] OOO tagLead failed (non-blocking):', err)
+          );
         } catch (err) {
           console.error('Failed to handle OOO:', err);
         }
       }
 
-      // === Tag the lead in Instantly ===
+      // === Tag the lead in Instantly (best-effort) ===
       const tagMap: Record<string, string> = {
         interested: 'Interested',
         soft_no: 'SOFT NO',
         custom: 'Custom',
       };
-      try {
-        if (subCategory !== 'custom.ooo') {
-          await tagLead(lead_email, tagMap[category] || 'Custom');
-        }
-      } catch (err) {
-        console.error('Failed to tag lead:', err);
+      if (subCategory !== 'custom.ooo') {
+        tagLead(lead_email, tagMap[category] || 'Custom').catch((err) =>
+          console.warn('[webhook] tagLead failed (non-blocking):', err)
+        );
       }
 
       // === Draft reply using playbook + research + knowledge ===
@@ -228,7 +241,8 @@ export async function POST(req: NextRequest) {
           threadHistory,
           lead_email,
           leadName || null,
-          leadCompany || null
+          leadCompany || null,
+          clientId
         );
 
         aiReply = draftResult.reply;
@@ -246,19 +260,6 @@ export async function POST(req: NextRequest) {
     // Step 4: Store in database
     const responseTime = Date.now() - startTime;
 
-    // Resolve client_id from pipeline_leads, fallback to internal client
-    let clientId = '00000000-0000-0000-0000-000000000001';
-    try {
-      const { data: pl } = await supabase
-        .from('pipeline_leads')
-        .select('client_id')
-        .eq('email', lead_email)
-        .not('client_id', 'is', null)
-        .limit(1)
-        .single();
-      if (pl?.client_id) clientId = pl.client_id;
-    } catch {}
-
     const { data: replyRecord, error: insertError } = await supabase
       .from('replies')
       .insert({
@@ -272,6 +273,7 @@ export async function POST(req: NextRequest) {
         original_message: reply_text,
         thread_history: threadHistory,
         ai_reply: aiReply || null,
+        final_reply: aiReply || null,
         confidence: replyConfidence,
         status,
         research: research?.raw_research || null,

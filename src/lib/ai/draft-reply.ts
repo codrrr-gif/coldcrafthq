@@ -24,14 +24,17 @@ export interface DraftReplyResult {
 }
 
 // Fetch relevant knowledge base entries
-async function getRelevantKnowledge(query: string, category: string): Promise<string[]> {
+async function getRelevantKnowledge(query: string, category: string, clientId?: string): Promise<string[]> {
   try {
     // Priority: fetch category-specific knowledge first, then general
-    const { data: categoryEntries } = await supabase
+    let q = supabase
       .from('knowledge_base')
       .select('title, content, category')
       .in('category', getCategoryPriority(category))
       .limit(8);
+    if (clientId) q = q.eq('client_id', clientId);
+
+    const { data: categoryEntries } = await q;
 
     if (categoryEntries?.length) {
       return categoryEntries.map(
@@ -39,11 +42,14 @@ async function getRelevantKnowledge(query: string, category: string): Promise<st
       );
     }
 
-    // Fallback: get all
-    const { data: allEntries } = await supabase
+    // Fallback: get all for this client
+    let fallback = supabase
       .from('knowledge_base')
       .select('title, content, category')
       .limit(10);
+    if (clientId) fallback = fallback.eq('client_id', clientId);
+
+    const { data: allEntries } = await fallback;
 
     return (allEntries || []).map((r) => `[${r.title}] (${r.category})\n${r.content}`);
   } catch {
@@ -95,7 +101,8 @@ export async function draftReply(
   threadHistory: ThreadMessage[],
   leadEmail: string,
   leadName: string | null,
-  leadCompany: string | null
+  leadCompany: string | null,
+  clientId?: string
 ): Promise<DraftReplyResult> {
   const client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
   const playbook = getPlaybook(subCategory);
@@ -121,7 +128,7 @@ export async function draftReply(
     shouldResearch
       ? researchLead(leadName, leadEmail, leadCompany)
       : Promise.resolve(null),
-    getRelevantKnowledge(replyText, parentCategory),
+    getRelevantKnowledge(replyText, parentCategory, clientId),
     getTrainingExamples(subCategory),
     getOutcomeExamples(subCategory),
   ]);
@@ -210,6 +217,9 @@ Return a JSON object with:
   "alternative_reply": "A second version with a different angle (or null if the first is strong enough)"
 }
 
+## CALENDAR LINK
+${process.env.CALENDLY_LINK ? `When you need to include a calendar/booking link, use this exact URL: ${process.env.CALENDLY_LINK}` : 'No calendar link is configured. Say "happy to find a time" instead of using a fake link.'}
+
 ## ABSOLUTE RULES
 - Write as a HUMAN, not an AI. No corporate speak. No buzzwords.
 - SHORT. If the framework says 3 sentences, write 3 sentences. Not 4. Not 5.
@@ -217,8 +227,7 @@ Return a JSON object with:
 - NEVER use: "I hope this email finds you well", "Just following up", "I wanted to reach out", "I'd love to", "Absolutely!", "Great to hear!"
 - NEVER use more than one exclamation mark in the entire reply.
 - NEVER mention AI, automation, or that this was generated.
-- NEVER use [brackets] or placeholders. If you don't know something, omit it.
-- If knowledge base has a calendar link format, use it. Otherwise say "happy to find a time" without a fake link.
+- NEVER use [brackets] or placeholders — use the real calendar link above, or omit it.
 - Match the prospect's language. If they write in lowercase, you can be more casual. If they're formal, be professional.
 
 ## ANTI-AI PATTERNS — Your replies MUST NOT contain these
