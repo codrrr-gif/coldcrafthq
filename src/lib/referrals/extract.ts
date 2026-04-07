@@ -150,8 +150,11 @@ export async function processReferral(params: {
     return { success: true, email, error: 'already_in_pipeline' };
   }
 
-  // Push to the same signal campaign type as the original lead
-  const campaignId = signalType ? getCampaignId(signalType as SignalType) : null;
+  // Push to same signal campaign, or fall back to the source campaign / default
+  const campaignId = (signalType ? getCampaignId(signalType as SignalType) : null)
+    || params.sourceCampaignId
+    || process.env.CAMPAIGN_ID_DEFAULT
+    || null;
   const nameParts = (referral.name || '').split(/\s+/);
   const firstName = nameParts[0] || '';
 
