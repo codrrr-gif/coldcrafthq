@@ -48,14 +48,15 @@ export async function POST(req: NextRequest) {
     if (authErr) return authErr;
 
     const payload = await req.json();
-    const {
-      campaign_id,
-      lead_email,
-      lead_id,
-      reply_text,
-      lead_name: payloadLeadName,
-      lead_company_name: payloadCompany,
-    } = payload;
+
+    // Normalize Instantly's payload — they send `lead` not `lead_email`,
+    // and reply text lives in `body.text` not `reply_text`
+    const campaign_id = payload.campaign_id || null;
+    const lead_email = payload.lead_email || payload.from_address_email || payload.lead || null;
+    const lead_id = payload.lead_id || null;
+    const reply_text = payload.reply_text || payload.body?.text || payload.content_preview || null;
+    const payloadLeadName = payload.lead_name || payload.from_address_json?.[0]?.name || null;
+    const payloadCompany = payload.lead_company_name || null;
 
     if (!lead_email || !reply_text) {
       return NextResponse.json(
@@ -64,17 +65,13 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    // Idempotency check — skip duplicate webhooks
-    // NOTE: Requires ALTER TABLE replies ADD COLUMN message_hash TEXT;
-    // CREATE INDEX idx_replies_message_hash ON replies(message_hash);
+    // Idempotency check — skip duplicate webhooks (no time window)
     const crypto = await import('crypto');
     const messageHash = crypto.createHash('sha256').update(`${lead_email}:${reply_text}`).digest('hex');
-    const fiveMinutesAgo = new Date(Date.now() - 5 * 60 * 1000).toISOString();
     const { data: existingReply } = await supabase
       .from('replies')
       .select('id')
       .eq('message_hash', messageHash)
-      .gte('created_at', fiveMinutesAgo)
       .limit(1);
 
     if (existingReply?.length) {
@@ -355,10 +352,15 @@ export async function POST(req: NextRequest) {
     }
 
     // Step 5.6: Auto-process referrals — extract referred person, push to pipeline
-    // Also check OOO replies — people often say "email X while I'm away"
+    // Runs on explicit referral categories AND any reply with referral language,
+    // because the AI categorizer often classifies "talk to Sarah instead" as soft_no
     const hasEmailInReply = /[\w.+-]+@[\w-]+\.[\w.-]+/.test(reply_text || '');
-    if (subCategory === 'interested.referral' || subCategory === 'custom.forwarded' ||
-        (subCategory === 'custom.ooo' && hasEmailInReply)) {
+    const hasReferralLanguage = /(?:talk to|reach out to|contact|speak with|connect with|forward(?:ed|ing)?|handles?|manages?|right person|better person|you should (?:email|call)|instead.{0,30}@|point(?:ed|ing)?\s+(?:you|me))/i.test(reply_text || '');
+    const shouldCheckReferral = subCategory === 'interested.referral' ||
+      subCategory === 'custom.forwarded' ||
+      (subCategory === 'custom.ooo' && hasEmailInReply) ||
+      (hasReferralLanguage && hasEmailInReply);
+    if (shouldCheckReferral) {
       try {
         const referral = extractReferral(reply_text, leadCompany || null);
         if (referral) {
@@ -377,6 +379,7 @@ export async function POST(req: NextRequest) {
             signalType: sourceLead?.signal_type || null,
             companyDomain: sourceLead?.company_domain || null,
             personalizedOpener: null,
+            sourceCampaignId: campaign_id || null,
           }).catch(console.error); // fire-and-forget
         }
       } catch (err) {
@@ -479,16 +482,33 @@ export async function POST(req: NextRequest) {
 
 /** Try to extract a return date from OOO auto-replies */
 function extractOooDate(text: string): string | null {
-  // Match common patterns: "back on March 15", "returning Jan 5, 2026", "return 3/15"
   const patterns = [
-    /(?:back|return(?:ing)?)\s+(?:on\s+)?(\w+ \d{1,2}(?:,?\s*\d{4})?)/i,
-    /(?:back|return(?:ing)?)\s+(?:on\s+)?(\d{1,2}\/\d{1,2}(?:\/\d{2,4})?)/i,
+    // "back on March 15", "returning Jan 5, 2026"
+    /(?:back|return(?:ing)?|available)\s+(?:on\s+)?(\w+ \d{1,2}(?:,?\s*\d{4})?)/i,
+    // "back on 3/15", "return 4/6/2026"
+    /(?:back|return(?:ing)?|available)\s+(?:on\s+)?(\d{1,2}\/\d{1,2}(?:\/\d{2,4})?)/i,
+    // "away until March 15", "out until June 1", "until 4/6"
+    /(?:until|through|till)\s+(\w+ \d{1,2}(?:,?\s*\d{4})?)/i,
+    /(?:until|through|till)\s+(\d{1,2}\/\d{1,2}(?:\/\d{2,4})?)/i,
+    // "away until June" (month only — assume 1st of that month)
+    /(?:until|through|till)\s+(January|February|March|April|May|June|July|August|September|October|November|December)/i,
   ];
   for (const pattern of patterns) {
     const match = text.match(pattern);
     if (match) {
-      const parsed = new Date(match[1]);
-      if (!isNaN(parsed.getTime()) && parsed > new Date()) return parsed.toISOString();
+      let dateStr = match[1];
+      // Month-only: append "1" so Date can parse it (e.g. "June" → "June 1")
+      if (/^[A-Z][a-z]+$/.test(dateStr)) dateStr = `${dateStr} 1`;
+      const parsed = new Date(dateStr);
+      if (!isNaN(parsed.getTime())) {
+        // If parsed date is in the past (no year given), set to current/next year
+        const now = new Date();
+        if (parsed < now) {
+          parsed.setFullYear(now.getFullYear());
+          if (parsed < now) parsed.setFullYear(now.getFullYear() + 1);
+        }
+        return parsed.toISOString();
+      }
     }
   }
   return null;
