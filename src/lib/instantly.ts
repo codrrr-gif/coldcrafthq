@@ -108,11 +108,22 @@ export async function sendReply(
 }
 
 // ── Lead label cache (per serverless instance) ──────────────────────────────
-let _labelCache: { id: string; label: string }[] | null = null;
+let _labelCache: { id: string; label: string; interest_status: number }[] | null = null;
 let _labelCacheTime = 0;
 const LABEL_CACHE_TTL = 5 * 60 * 1000; // 5 minutes
 
-async function getOrCreateLabelId(labelName: string, seed?: string): Promise<string> {
+// Map label names to sentiment for creation
+const NEGATIVE_LABELS = new Set(['hard no', 'soft no', 'closed_lost', 'bad_fit', 'not interested']);
+const POSITIVE_LABELS = new Set(['interested', 'meeting_booked', 'won', 'referral-made']);
+
+function labelSentiment(name: string): 'positive' | 'negative' | 'neutral' {
+  const lower = name.toLowerCase();
+  if (NEGATIVE_LABELS.has(lower)) return 'negative';
+  if (POSITIVE_LABELS.has(lower)) return 'positive';
+  return 'neutral';
+}
+
+async function getOrCreateLabelValue(labelName: string, seed?: string): Promise<number> {
   // Refresh cache if stale or empty
   if (!_labelCache || Date.now() - _labelCacheTime > LABEL_CACHE_TTL) {
     try {
@@ -123,7 +134,11 @@ async function getOrCreateLabelId(labelName: string, seed?: string): Promise<str
       if (res.ok) {
         const data = await res.json();
         _labelCache = (data.data || data.items || data || []).map(
-          (l: Record<string, string>) => ({ id: l.id, label: l.label })
+          (l: Record<string, unknown>) => ({
+            id: l.id as string,
+            label: l.label as string,
+            interest_status: l.interest_status as number,
+          })
         );
         _labelCacheTime = Date.now();
       }
@@ -136,13 +151,16 @@ async function getOrCreateLabelId(labelName: string, seed?: string): Promise<str
   const existing = _labelCache?.find(
     (l) => l.label.toLowerCase() === labelName.toLowerCase()
   );
-  if (existing) return existing.id;
+  if (existing) return existing.interest_status;
 
-  // Create new label
+  // Create new label — requires interest_status_label: positive|negative|neutral
   const createRes = await fetch(`${API_BASE}/lead-labels`, {
     method: 'POST',
     headers: headers(seed),
-    body: JSON.stringify({ label: labelName }),
+    body: JSON.stringify({
+      label: labelName,
+      interest_status_label: labelSentiment(labelName),
+    }),
     signal: AbortSignal.timeout(10000),
   });
 
@@ -152,8 +170,9 @@ async function getOrCreateLabelId(labelName: string, seed?: string): Promise<str
   }
 
   const newLabel = await createRes.json();
-  if (_labelCache) _labelCache.push({ id: newLabel.id, label: labelName });
-  return newLabel.id;
+  const interestStatus = newLabel.interest_status as number;
+  if (_labelCache) _labelCache.push({ id: newLabel.id, label: labelName, interest_status: interestStatus });
+  return interestStatus;
 }
 
 // Tag a lead with a label (v2: look up/create label, then assign via interest-status)
@@ -161,14 +180,14 @@ export async function tagLead(
   leadEmail: string,
   label: string
 ): Promise<void> {
-  const labelId = await getOrCreateLabelId(label, leadEmail);
+  const interestValue = await getOrCreateLabelValue(label, leadEmail);
 
   const res = await fetch(`${API_BASE}/leads/update-interest-status`, {
     method: 'POST',
     headers: headers(leadEmail),
     body: JSON.stringify({
       lead_email: leadEmail,
-      interest_status: labelId,
+      interest_value: interestValue,
     }),
     signal: AbortSignal.timeout(15000),
   });

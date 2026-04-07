@@ -505,26 +505,31 @@ async function handleTool(name: string, args: Record<string, unknown>): Promise<
     }
 
     case 'tag_lead': {
-      // v2: look up or create the label, then assign via interest-status
+      // v2: look up or create label → get interest_status number → assign
+      const NEG = new Set(['hard no', 'soft no', 'closed_lost', 'bad_fit', 'not interested']);
+      const POS = new Set(['interested', 'meeting_booked', 'won', 'referral-made']);
+      const labelName = String(args.label);
+      const sentiment = NEG.has(labelName.toLowerCase()) ? 'negative' : POS.has(labelName.toLowerCase()) ? 'positive' : 'neutral';
+
       const labelsData = unwrap(await req('/lead-labels'));
       const labels = Array.isArray(labelsData) ? labelsData : [];
-      let labelId = labels.find(
-        (l: Record<string, string>) => l.label?.toLowerCase() === String(args.label).toLowerCase()
-      )?.id;
+      let match = labels.find(
+        (l: Record<string, unknown>) => String(l.label).toLowerCase() === labelName.toLowerCase()
+      ) as Record<string, unknown> | undefined;
 
-      if (!labelId) {
-        const created = await req<Record<string, string>>('/lead-labels', {
+      if (!match) {
+        match = await req<Record<string, unknown>>('/lead-labels', {
           method: 'POST',
-          body: JSON.stringify({ label: args.label }),
+          body: JSON.stringify({ label: labelName, interest_status_label: sentiment }),
         });
-        labelId = created.id;
       }
 
+      const interestValue = match.interest_status as number;
       await req('/leads/update-interest-status', {
         method: 'POST',
-        body: JSON.stringify({ lead_email: args.email, interest_status: labelId }),
+        body: JSON.stringify({ lead_email: args.email, interest_value: interestValue }),
       });
-      return JSON.stringify({ success: true, email: args.email, label: args.label, label_id: labelId });
+      return JSON.stringify({ success: true, email: args.email, label: labelName, interest_value: interestValue });
     }
 
     case 'list_lead_labels': {
