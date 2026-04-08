@@ -76,7 +76,7 @@ export const PLAYBOOKS: Record<SubCategory, Playbook> = {
       },
     ],
     auto_send_eligible: true,
-    max_confidence_threshold: 0.92,
+    max_confidence_threshold: 0.80,
     follow_up_action: null,
   },
 
@@ -109,7 +109,7 @@ export const PLAYBOOKS: Record<SubCategory, Playbook> = {
       },
     ],
     auto_send_eligible: true,
-    max_confidence_threshold: 0.88,
+    max_confidence_threshold: 0.78,
     follow_up_action: null,
   },
 
@@ -147,7 +147,7 @@ export const PLAYBOOKS: Record<SubCategory, Playbook> = {
       },
     ],
     auto_send_eligible: true,
-    max_confidence_threshold: 0.85,
+    max_confidence_threshold: 0.75,
     follow_up_action: null,
   },
 
@@ -173,7 +173,7 @@ export const PLAYBOOKS: Record<SubCategory, Playbook> = {
       },
     ],
     auto_send_eligible: true,
-    max_confidence_threshold: 0.90,
+    max_confidence_threshold: 0.78,
     follow_up_action: 'create_referral_follow_up',
   },
 
@@ -199,7 +199,7 @@ export const PLAYBOOKS: Record<SubCategory, Playbook> = {
       },
     ],
     auto_send_eligible: true,
-    max_confidence_threshold: 0.82,
+    max_confidence_threshold: 0.75,
     follow_up_action: null,
   },
 
@@ -233,7 +233,7 @@ export const PLAYBOOKS: Record<SubCategory, Playbook> = {
       },
     ],
     auto_send_eligible: true,
-    max_confidence_threshold: 0.93,
+    max_confidence_threshold: 0.80,
     follow_up_action: 'schedule_follow_up_30_days',
   },
 
@@ -268,7 +268,7 @@ export const PLAYBOOKS: Record<SubCategory, Playbook> = {
       },
     ],
     auto_send_eligible: true,
-    max_confidence_threshold: 0.95,
+    max_confidence_threshold: 0.82,
     follow_up_action: null,
   },
 
@@ -295,7 +295,7 @@ export const PLAYBOOKS: Record<SubCategory, Playbook> = {
       },
     ],
     auto_send_eligible: true,
-    max_confidence_threshold: 0.85,
+    max_confidence_threshold: 0.78,
     follow_up_action: 'schedule_follow_up_60_days',
   },
 
@@ -322,7 +322,7 @@ export const PLAYBOOKS: Record<SubCategory, Playbook> = {
       },
     ],
     auto_send_eligible: true,
-    max_confidence_threshold: 0.85,
+    max_confidence_threshold: 0.78,
     follow_up_action: 'schedule_follow_up_45_days',
   },
 
@@ -347,7 +347,7 @@ export const PLAYBOOKS: Record<SubCategory, Playbook> = {
       },
     ],
     auto_send_eligible: true,
-    max_confidence_threshold: 0.88,
+    max_confidence_threshold: 0.78,
     follow_up_action: null,
   },
 
@@ -436,7 +436,7 @@ export const PLAYBOOKS: Record<SubCategory, Playbook> = {
       },
     ],
     auto_send_eligible: true,
-    max_confidence_threshold: 0.88,
+    max_confidence_threshold: 0.78,
     follow_up_action: 'schedule_follow_up_3_days',
   },
 

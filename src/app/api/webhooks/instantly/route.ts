@@ -39,6 +39,39 @@ import { extractReferral, processReferral } from '@/lib/referrals/extract';
 import type { ThreadMessage } from '@/lib/types';
 import type { SubCategory } from '@/lib/ai/playbooks';
 
+// Signal campaign IDs from env — anything else is a list campaign
+function isSignalCampaign(campaignId: string | null): boolean {
+  if (!campaignId) return false;
+  const signalIds = [
+    process.env.CAMPAIGN_ID_DEFAULT,
+    process.env.CAMPAIGN_ID_FUNDING,
+    process.env.CAMPAIGN_ID_JOB_POSTING,
+    process.env.CAMPAIGN_ID_LEADERSHIP,
+    process.env.CAMPAIGN_ID_NEWS,
+    process.env.CAMPAIGN_ID_INTENT,
+    process.env.CAMPAIGN_ID_TECH_STACK,
+    process.env.CAMPAIGN_ID_COMPETITOR,
+    process.env.CAMPAIGN_ID_JOB_CHANGE,
+  ].filter(Boolean);
+  return signalIds.includes(campaignId);
+}
+
+// Detect obvious OOO auto-replies without burning an AI call
+function isObviousOoo(text: string): boolean {
+  const lower = text.toLowerCase();
+  const patterns = [
+    /out of (?:the )?office/,
+    /i(?:'m| am) (?:currently )?(?:out|away|on (?:vacation|holiday|leave|pto))/,
+    /auto(?:matic)?[- ]?reply/,
+    /i will (?:be )?(?:back|return)/,
+    /limited access to email/,
+    /away from (?:the )?office/,
+    /on (?:annual |parental |medical )?leave/,
+    /(?:no|limited) access to (?:my )?email/,
+  ];
+  return patterns.some(p => p.test(lower));
+}
+
 export async function POST(req: NextRequest) {
   const startTime = Date.now();
 
@@ -78,6 +111,20 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ success: true, id: existingReply[0].id, deduplicated: true });
     }
 
+    // Cooldown dedup — skip if we processed a reply from this email in the last hour
+    // Catches OOO auto-replies with slightly different text (e.g. different subject lines)
+    const oneHourAgo = new Date(Date.now() - 60 * 60 * 1000).toISOString();
+    const { data: recentReply } = await supabase
+      .from('replies')
+      .select('id, sub_category')
+      .eq('lead_email', lead_email)
+      .gte('created_at', oneHourAgo)
+      .limit(1);
+
+    if (recentReply?.length) {
+      return NextResponse.json({ success: true, id: recentReply[0].id, deduplicated: true, reason: 'cooldown' });
+    }
+
     // Record reply as a valid signal — non-blocking, best data point we can get
     recordEmailOutcome(lead_email, 'replied', {
       campaign_id: campaign_id || undefined,
@@ -94,8 +141,13 @@ export async function POST(req: NextRequest) {
       console.error('Failed to fetch thread:', err);
     }
 
-    // Step 2: AI categorizes with chain-of-thought reasoning
-    const categorization = await categorizeReply(reply_text, threadHistory);
+    // Pre-AI OOO detection — skip expensive AI call for obvious auto-replies
+    const detectedOoo = isObviousOoo(reply_text);
+
+    // Step 2: AI categorizes with chain-of-thought reasoning (skip for obvious OOO)
+    const categorization = detectedOoo
+      ? { category: 'custom' as const, sub_category: 'custom.ooo' as const, confidence: 0.95, tone: 'neutral' as const, urgency: 'low' as const, prospect_name: null, prospect_company: null, summary: 'Out of office auto-reply' }
+      : await categorizeReply(reply_text, threadHistory);
     const {
       category,
       sub_category: subCategory,
@@ -195,24 +247,31 @@ export async function POST(req: NextRequest) {
         status = 'pending'; // Fall back to human review only if delete fails
       }
     } else if (category === 'interested' || category === 'soft_no' || category === 'custom') {
-      // === OOO: Remove from campaign (no point emailing someone on leave) ===
+      // === OOO: Handle based on campaign type ===
+      // List campaigns: stop_on_auto_reply already pauses the sequence — don't delete
+      // Signal campaigns: delete from campaign (time-sensitive, no point keeping)
       if (subCategory === 'custom.ooo') {
         try {
-          let deleteCampaignId = campaign_id;
-          if (!deleteCampaignId) {
-            const { data: pl } = await supabase
-              .from('pipeline_leads')
-              .select('instantly_campaign_id')
-              .eq('email', lead_email)
-              .not('instantly_campaign_id', 'is', null)
-              .limit(1)
-              .maybeSingle();
-            deleteCampaignId = pl?.instantly_campaign_id || null;
+          if (isSignalCampaign(campaign_id)) {
+            let deleteCampaignId = campaign_id;
+            if (!deleteCampaignId) {
+              const { data: pl } = await supabase
+                .from('pipeline_leads')
+                .select('instantly_campaign_id')
+                .eq('email', lead_email)
+                .not('instantly_campaign_id', 'is', null)
+                .limit(1)
+                .maybeSingle();
+              deleteCampaignId = pl?.instantly_campaign_id || null;
+            }
+            if (deleteCampaignId) {
+              await deleteLead(deleteCampaignId, lead_email);
+            }
+            status = 'skipped';
+          } else {
+            // List campaign — let stop_on_auto_reply handle the pause
+            status = 'skipped';
           }
-          if (deleteCampaignId) {
-            await deleteLead(deleteCampaignId, lead_email);
-          }
-          status = 'skipped';
           tagLead(lead_email, 'OOO').catch((err) =>
             console.warn('[webhook] OOO tagLead failed (non-blocking):', err)
           );
@@ -234,26 +293,29 @@ export async function POST(req: NextRequest) {
       }
 
       // === Draft reply using playbook + research + knowledge ===
-      try {
-        const draftResult = await draftReply(
-          subCategory as SubCategory,
-          reply_text,
-          threadHistory,
-          lead_email,
-          leadName || null,
-          leadCompany || null,
-          clientId
-        );
+      // Skip drafting for OOO — no point replying to an auto-reply
+      if (subCategory !== 'custom.ooo') {
+        try {
+          const draftResult = await draftReply(
+            subCategory as SubCategory,
+            reply_text,
+            threadHistory,
+            lead_email,
+            leadName || null,
+            leadCompany || null,
+            clientId
+          );
 
-        aiReply = draftResult.reply;
-        replyConfidence = draftResult.confidence;
-        frameworkUsed = draftResult.framework_used;
-        knowledgeUsed = draftResult.knowledge_used.join(', ');
-        aiReasoning = draftResult.reasoning;
-        alternativeReply = draftResult.alternative_reply;
-        research = draftResult.research;
-      } catch (err) {
-        console.error('Failed to draft reply:', err);
+          aiReply = draftResult.reply;
+          replyConfidence = draftResult.confidence;
+          frameworkUsed = draftResult.framework_used;
+          knowledgeUsed = draftResult.knowledge_used.join(', ');
+          aiReasoning = draftResult.reasoning;
+          alternativeReply = draftResult.alternative_reply;
+          research = draftResult.research;
+        } catch (err) {
+          console.error('Failed to draft reply:', err);
+        }
       }
     }
 
