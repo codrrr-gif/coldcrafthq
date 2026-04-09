@@ -362,6 +362,11 @@ export async function POST(req: NextRequest) {
       .single();
 
     if (insertError) {
+      // Unique constraint on message_hash — race condition duplicate, safe to ignore
+      if (insertError.code === '23505' && insertError.message?.includes('message_hash')) {
+        const { data: existing } = await supabase.from('replies').select('id').eq('message_hash', messageHash).limit(1);
+        return NextResponse.json({ success: true, id: existing?.[0]?.id, deduplicated: true });
+      }
       console.error('Failed to store reply:', insertError);
       return NextResponse.json({ error: 'Failed to store reply' }, { status: 500 });
     }
