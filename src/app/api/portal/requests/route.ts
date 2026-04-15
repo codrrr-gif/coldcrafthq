@@ -30,8 +30,14 @@ export async function POST(req: NextRequest) {
 
   const { type, subject, description } = await req.json();
 
+  const VALID_TYPES = ['pause_campaign', 'resume_campaign', 'update_icp', 'change_offer', 'general_question', 'other'];
+
   if (!type || !subject?.trim() || !description?.trim()) {
     return NextResponse.json({ error: 'type, subject, and description are required' }, { status: 400 });
+  }
+
+  if (!VALID_TYPES.includes(type)) {
+    return NextResponse.json({ error: 'Invalid request type' }, { status: 400 });
   }
 
   const { data, error: dbError } = await supabase

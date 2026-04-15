@@ -9,7 +9,7 @@ export async function GET(req: NextRequest) {
   const url = new URL(req.url);
   const type = url.searchParams.get('type');
   const limit = Math.min(parseInt(url.searchParams.get('limit') || '50'), 100);
-  const offset = parseInt(url.searchParams.get('offset') || '0');
+  const offset = Math.max(0, parseInt(url.searchParams.get('offset') || '0') || 0);
 
   let query = supabase
     .from('activity_feed')

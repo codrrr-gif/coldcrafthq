@@ -31,6 +31,14 @@ export async function PUT(req: NextRequest) {
 
   const { portal_name, primary_color, logo_url } = await req.json();
 
+  if (primary_color && !/^#[0-9a-fA-F]{6}$/.test(primary_color)) {
+    return NextResponse.json({ error: 'primary_color must be a valid hex color (e.g. #1a2b3c)' }, { status: 400 });
+  }
+
+  if (logo_url && !/^https:\/\/.+/.test(logo_url)) {
+    return NextResponse.json({ error: 'logo_url must be an https:// URL' }, { status: 400 });
+  }
+
   const updates: Record<string, unknown> = { updated_at: new Date().toISOString() };
   if (portal_name !== undefined) updates.portal_name = portal_name || null;
   if (primary_color !== undefined) updates.primary_color = primary_color || null;

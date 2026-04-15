@@ -3,39 +3,29 @@ import { supabase } from '@/lib/supabase/client';
 const LOCK_DURATION_MS = 25 * 60 * 1000; // 25 minutes
 
 /**
- * Attempt to acquire a cron lock. Returns true if lock acquired, false if another run is active.
- * Uses upsert with a timestamp check to prevent concurrent runs.
+ * Attempt to acquire a cron lock atomically.
+ * Uses a single UPDATE ... WHERE locked_until < now() to prevent race conditions.
+ * If the row doesn't exist yet, inserts it.
  */
 export async function acquireCronLock(jobName: string): Promise<boolean> {
-  const now = new Date();
-  const lockExpiry = new Date(now.getTime() + LOCK_DURATION_MS);
+  const lockExpiry = new Date(Date.now() + LOCK_DURATION_MS).toISOString();
 
-  // Try to claim: only succeed if no active lock exists
-  const { data } = await supabase
-    .from('cron_locks')
-    .select('locked_until')
-    .eq('job_name', jobName)
-    .single();
-
-  if (data && new Date(data.locked_until) > now) {
-    console.log(`[cron-lock] ${jobName} is already running (locked until ${data.locked_until})`);
-    return false;
-  }
-
-  const { error } = await supabase
-    .from('cron_locks')
-    .upsert({
-      job_name: jobName,
-      locked_at: now.toISOString(),
-      locked_until: lockExpiry.toISOString(),
-    }, { onConflict: 'job_name' });
+  // Atomic: only updates if lock is expired or doesn't exist
+  const { data, error } = await supabase.rpc('try_acquire_cron_lock', {
+    p_job_name: jobName,
+    p_locked_until: lockExpiry,
+  });
 
   if (error) {
     console.error(`[cron-lock] Failed to acquire lock for ${jobName}:`, error);
     return false;
   }
 
-  return true;
+  const acquired = data === true;
+  if (!acquired) {
+    console.log(`[cron-lock] ${jobName} is already running`);
+  }
+  return acquired;
 }
 
 export async function releaseCronLock(jobName: string): Promise<void> {

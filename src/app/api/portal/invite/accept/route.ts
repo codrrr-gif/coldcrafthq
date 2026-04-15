@@ -12,6 +12,10 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: 'token and password are required' }, { status: 400 });
   }
 
+  if (typeof password !== 'string' || password.length < 8) {
+    return NextResponse.json({ error: 'Password must be at least 8 characters' }, { status: 400 });
+  }
+
   const secret = process.env.INVITE_JWT_SECRET || process.env.NEXTAUTH_SECRET;
   if (!secret) return NextResponse.json({ error: 'Server misconfigured' }, { status: 503 });
 
@@ -24,15 +28,21 @@ export async function POST(req: NextRequest) {
 
   const passwordHash = await hash(password, 12);
 
-  const { error } = await supabase
+  const { data: updated, error: dbError } = await supabase
     .from('client_users')
     .update({
       password_hash: passwordHash,
       accepted_at: new Date().toISOString(),
     })
-    .eq('id', payload.userId);
+    .eq('id', payload.userId)
+    .eq('client_id', payload.clientId)
+    .is('accepted_at', null)
+    .select('id')
+    .single();
 
-  if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+  if (dbError || !updated) {
+    return NextResponse.json({ error: 'Invitation already accepted or invalid' }, { status: 400 });
+  }
 
   const { data: client } = await supabase.from('clients').select('name').eq('id', payload.clientId).single();
 

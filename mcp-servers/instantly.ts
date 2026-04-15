@@ -85,14 +85,18 @@ const TOOLS: Tool[] = [
   },
   {
     name: 'create_campaign',
-    description: 'Create a new email campaign.',
+    description: 'Create a new email campaign. Requires name and campaign_schedule.',
     inputSchema: {
       type: 'object',
       properties: {
         name: { type: 'string', description: 'Campaign name.' },
+        campaign_schedule: {
+          type: 'object',
+          description: 'Schedule object with timezone and sending windows.',
+        },
         sequences: {
           type: 'array',
-          description: 'Email sequence steps.',
+          description: 'Email sequence steps (only first array element is used).',
           items: {
             type: 'object',
             properties: {
@@ -103,7 +107,7 @@ const TOOLS: Tool[] = [
           },
         },
       },
-      required: ['name'],
+      required: ['name', 'campaign_schedule'],
     },
   },
   {
@@ -115,11 +119,13 @@ const TOOLS: Tool[] = [
         campaign_id: { type: 'string', description: 'Campaign ID to update.' },
         name: { type: 'string' },
         daily_limit: { type: 'number' },
-        email_gap: { type: 'number' },
-        timezone: { type: 'string' },
-        track_opens: { type: 'boolean' },
-        track_clicks: { type: 'boolean' },
+        email_gap: { type: 'number', description: 'Gap between emails in minutes.' },
+        open_tracking: { type: 'boolean', description: 'Track email opens.' },
+        link_tracking: { type: 'boolean', description: 'Track link clicks.' },
         stop_on_reply: { type: 'boolean' },
+        stop_on_auto_reply: { type: 'boolean' },
+        text_only: { type: 'boolean' },
+        daily_max_leads: { type: 'number', description: 'Max new leads to contact per day.' },
       },
       required: ['campaign_id'],
     },
@@ -168,8 +174,9 @@ const TOOLS: Tool[] = [
       properties: {
         campaign_id: { type: 'string', description: 'Campaign ID.' },
         limit: { type: 'number', description: 'Max leads (default 100).' },
-        starting_after: { type: 'string', description: 'Pagination cursor.' },
-        email_type: { type: 'string', description: 'Filter: "all", "bounced", "unsubscribed", "interested".' },
+        starting_after: { type: 'string', description: 'Pagination cursor (lead ID or email).' },
+        search: { type: 'string', description: 'Search by first name, last name, or email.' },
+        interest_status: { type: 'number', description: 'Filter by interest status value.' },
       },
       required: ['campaign_id'],
     },
@@ -268,7 +275,8 @@ const TOOLS: Tool[] = [
       type: 'object',
       properties: {
         name: { type: 'string', description: 'Label name.' },
-        color: { type: 'string', description: 'Hex color code (e.g. "#FF5733").' },
+        interest_status_label: { type: 'string', description: 'Sentiment: "positive", "negative", or "neutral" (default neutral).', enum: ['positive', 'negative', 'neutral'] },
+        description: { type: 'string', description: 'Description of the label purpose.' },
       },
       required: ['name'],
     },
@@ -353,7 +361,7 @@ const TOOLS: Tool[] = [
       properties: {
         email: { type: 'string', description: 'Account email address.' },
         daily_limit: { type: 'number', description: 'Max emails to send per day.' },
-        email_gap: { type: 'number', description: 'Minutes between sends.' },
+        sending_gap: { type: 'number', description: 'Minutes between sends.' },
       },
       required: ['email'],
     },
@@ -404,7 +412,10 @@ async function handleTool(name: string, args: Record<string, unknown>): Promise<
     }
 
     case 'create_campaign': {
-      const body: Record<string, unknown> = { name: args.name };
+      const body: Record<string, unknown> = {
+        name: args.name,
+        campaign_schedule: args.campaign_schedule,
+      };
       if (args.sequences) body.sequences = args.sequences;
       return JSON.stringify(await req('/campaigns', { method: 'POST', body: JSON.stringify(body) }), null, 2);
     }
@@ -440,11 +451,12 @@ async function handleTool(name: string, args: Record<string, unknown>): Promise<
 
     case 'list_campaign_leads': {
       const body: Record<string, unknown> = {
-        campaign_id: args.campaign_id,
+        campaign: args.campaign_id,
         limit: Number(args.limit || 100),
       };
       if (args.starting_after) body.starting_after = args.starting_after;
-      if (args.email_type) body.email_type = args.email_type;
+      if (args.search) body.search = args.search;
+      if (args.interest_status != null) body.filter = `interest_status:${args.interest_status}`;
       return JSON.stringify(unwrap(await req('/leads/list', {
         method: 'POST',
         body: JSON.stringify(body),
@@ -452,11 +464,11 @@ async function handleTool(name: string, args: Record<string, unknown>): Promise<
     }
 
     case 'get_lead': {
-      const body = {
-        campaign_id: args.campaign_id,
-        email: args.email,
+      const body: Record<string, unknown> = {
+        contacts: [args.email],
         limit: 1,
       };
+      if (args.campaign_id) body.campaign = args.campaign_id;
       const data = unwrap(await req('/leads/list', {
         method: 'POST',
         body: JSON.stringify(body),
@@ -471,7 +483,7 @@ async function handleTool(name: string, args: Record<string, unknown>): Promise<
       const results: unknown[] = [];
       for (let i = 0; i < leads.length; i += BATCH) {
         const batch = leads.slice(i, i + BATCH);
-        const data = await req('/leads', {
+        const data = await req('/leads/add', {
           method: 'POST',
           body: JSON.stringify({
             campaign_id: args.campaign_id,
@@ -489,19 +501,37 @@ async function handleTool(name: string, args: Record<string, unknown>): Promise<
       return JSON.stringify(await req('/leads/move', {
         method: 'POST',
         body: JSON.stringify({
-          from_campaign_id: args.from_campaign_id,
+          campaign: args.from_campaign_id,
           to_campaign_id: args.to_campaign_id,
-          emails: args.emails,
+          contacts: args.emails,
         }),
       }), null, 2);
     }
 
     case 'delete_lead': {
+      // v2: look up lead ID first, then bulk-delete by ID
+      const lookupBody: Record<string, unknown> = {
+        contacts: [args.email],
+        limit: 1,
+      };
+      if (args.campaign_id) lookupBody.campaign = args.campaign_id;
+      const found = unwrap(await req('/leads/list', {
+        method: 'POST',
+        body: JSON.stringify(lookupBody),
+      }));
+      const foundItems = Array.isArray(found) ? found : [];
+      if (!foundItems.length) {
+        return JSON.stringify({ success: true, email: args.email, note: 'Lead not found — already removed' });
+      }
+      const deleteBody: Record<string, unknown> = {
+        ids: [foundItems[0].id],
+      };
+      if (args.campaign_id) deleteBody.campaign_id = args.campaign_id;
       await req('/leads', {
         method: 'DELETE',
-        body: JSON.stringify({ campaign_id: args.campaign_id, email: args.email }),
+        body: JSON.stringify(deleteBody),
       });
-      return JSON.stringify({ success: true, email: args.email });
+      return JSON.stringify({ success: true, email: args.email, deleted_id: foundItems[0].id });
     }
 
     case 'tag_lead': {
@@ -539,7 +569,11 @@ async function handleTool(name: string, args: Record<string, unknown>): Promise<
     case 'create_lead_label': {
       return JSON.stringify(await req('/lead-labels', {
         method: 'POST',
-        body: JSON.stringify({ name: args.name, ...(args.color ? { color: args.color } : {}) }),
+        body: JSON.stringify({
+          label: args.name,
+          interest_status_label: args.interest_status_label || 'neutral',
+          ...(args.description ? { description: args.description } : {}),
+        }),
       }), null, 2);
     }
 
@@ -562,15 +596,29 @@ async function handleTool(name: string, args: Record<string, unknown>): Promise<
     }
 
     case 'send_reply': {
-      const body: Record<string, unknown> = {
-        campaign_id: args.campaign_id,
-        reply_to_email: args.email,
-        body: args.body,
-        ...(args.subject ? { subject: args.subject } : {}),
-        ...(args.cc ? { cc: args.cc } : {}),
-        ...(args.bcc ? { bcc: args.bcc } : {}),
+      // v2 requires reply_to_uuid + eaccount from the last email in the thread.
+      // Fetch the thread first to resolve these.
+      const threadData = unwrap(
+        await req(`/emails?campaign_id=${args.campaign_id}&lead=${encodeURIComponent(String(args.email))}&limit=1`)
+      );
+      const emails = Array.isArray(threadData) ? threadData : [];
+      const lastEmail = emails[0] as Record<string, unknown> | undefined;
+      if (!lastEmail?.id || !lastEmail?.eaccount) {
+        throw new Error('No emails found in thread — cannot resolve reply_to_uuid and eaccount');
+      }
+
+      const replyText = String(args.body);
+      const htmlBody = replyText.replace(/\n/g, '<br>');
+      const replyBody: Record<string, unknown> = {
+        reply_to_uuid: lastEmail.id,
+        eaccount: lastEmail.eaccount,
+        subject: args.subject || lastEmail.subject || 'Re:',
+        body: { html: htmlBody, text: replyText },
       };
-      return JSON.stringify(await req('/emails/reply', { method: 'POST', body: JSON.stringify(body) }), null, 2);
+      if (args.cc) replyBody.cc_address_email_list = (args.cc as string[]).join(',');
+      if (args.bcc) replyBody.bcc_address_email_list = (args.bcc as string[]).join(',');
+
+      return JSON.stringify(await req('/emails/reply', { method: 'POST', body: JSON.stringify(replyBody) }), null, 2);
     }
 
     // ── SENDING ACCOUNTS ──────────────────────────────────────────────────────

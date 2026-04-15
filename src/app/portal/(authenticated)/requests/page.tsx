@@ -36,20 +36,28 @@ export default function RequestsPage() {
 
   useEffect(() => { loadRequests(); }, []);
 
+  const [error, setError] = useState('');
+
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     setSubmitting(true);
+    setError('');
 
-    await fetch('/api/portal/requests', {
+    const res = await fetch('/api/portal/requests', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ type, subject, description }),
     });
 
+    setSubmitting(false);
+    if (!res.ok) {
+      const data = await res.json().catch(() => ({}));
+      setError(data.error || 'Failed to submit request');
+      return;
+    }
     setShowForm(false);
     setSubject('');
     setDescription('');
-    setSubmitting(false);
     loadRequests();
   }
 
@@ -64,6 +72,8 @@ export default function RequestsPage() {
           {showForm ? 'Cancel' : 'New Request'}
         </button>
       </div>
+
+      {error && <p className="text-sm text-red-400 font-mono mb-4">{error}</p>}
 
       {showForm && (
         <form onSubmit={handleSubmit} className="bg-bg-surface border border-border-subtle rounded-lg p-6 mb-6 space-y-4">

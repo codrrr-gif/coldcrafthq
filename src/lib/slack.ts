@@ -331,6 +331,61 @@ export async function notifyActorFailure(
   });
 }
 
+// Service failure alert — consecutive failures from external APIs (Vapi, Claude, Instantly, Perplexity)
+// Uses in-memory counter (resets per serverless instance) — good enough to catch sustained outages
+const failureCounts: Record<string, { count: number; lastAt: number }> = {};
+const FAILURE_THRESHOLD = 3;
+const FAILURE_WINDOW_MS = 10 * 60 * 1000; // 10 minutes
+
+export async function trackServiceFailure(
+  service: string,
+  error: unknown
+): Promise<void> {
+  const now = Date.now();
+  const entry = failureCounts[service];
+
+  if (entry && now - entry.lastAt < FAILURE_WINDOW_MS) {
+    entry.count++;
+    entry.lastAt = now;
+  } else {
+    failureCounts[service] = { count: 1, lastAt: now };
+  }
+
+  if (failureCounts[service].count === FAILURE_THRESHOLD) {
+    const errMsg = error instanceof Error ? error.message : String(error);
+    await sendSlack({
+      text: `🔴 ${service} has failed ${FAILURE_THRESHOLD} times in 10 minutes`,
+      blocks: [
+        {
+          type: 'header',
+          text: { type: 'plain_text', text: `🔴 Service Degraded: ${service}`, emoji: true },
+        },
+        {
+          type: 'section',
+          fields: [
+            { type: 'mrkdwn', text: `*Service:*\n\`${service}\`` },
+            { type: 'mrkdwn', text: `*Failures:*\n${FAILURE_THRESHOLD} in 10 min` },
+          ],
+        },
+        {
+          type: 'section',
+          text: { type: 'mrkdwn', text: `*Latest error:*\n\`\`\`${errMsg.slice(0, 300)}\`\`\`` },
+        },
+        {
+          type: 'context',
+          elements: [
+            { type: 'mrkdwn', text: 'Check API keys, rate limits, and service status. Subsequent failures are suppressed until the window resets.' },
+          ],
+        },
+      ],
+    });
+  }
+}
+
+export function resetServiceFailure(service: string): void {
+  delete failureCounts[service];
+}
+
 // Enrichment batch alert — too many leads failed in one run
 export async function notifyEnrichmentAlert(
   failed: number,

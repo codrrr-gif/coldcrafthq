@@ -5,10 +5,16 @@ import type { ApifyDatasetItem, ParsedSignal } from '@/lib/gtm/types';
 import { extractDomainFromText } from './utils';
 
 const HIGH_VALUE_TITLES = [
-  'vp sales', 'vp of sales', 'head of sales', 'chief revenue',
+  'vp sales', 'vp of sales', 'head of sales', 'chief revenue', 'cro',
   'vp marketing', 'head of growth', 'head of marketing', 'cmo',
   'revenue operations', 'sales operations', 'director of sales',
-  'business development', 'vp business development',
+  'business development', 'vp business development', 'sales director',
+  'head of demand', 'director demand', 'demand generation',
+  'head of revenue', 'vp revenue', 'chief commercial', 'cco',
+  'director of growth', 'growth marketing', 'head of partnerships',
+  'director of marketing', 'svp sales', 'svp marketing',
+  'vp demand gen', 'head of go-to-market', 'director gtm',
+  'revenue leader', 'sales leader',
 ];
 
 export function parseJobPostingSignals(items: ApifyDatasetItem[]): ParsedSignal[] {

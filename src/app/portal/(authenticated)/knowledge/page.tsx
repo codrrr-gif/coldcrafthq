@@ -52,30 +52,45 @@ export default function PortalKnowledgePage() {
     setCategory('general');
   }
 
+  const [error, setError] = useState('');
+
   async function save() {
     setSaving(true);
+    setError('');
     const method = editing === 'new' ? 'POST' : 'PUT';
     const body = editing === 'new'
       ? { title, content, category }
       : { id: editing, title, content, category };
 
-    await fetch('/api/portal/knowledge', {
+    const res = await fetch('/api/portal/knowledge', {
       method,
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(body),
     });
 
-    setEditing(null);
     setSaving(false);
+    if (!res.ok) {
+      const data = await res.json().catch(() => ({}));
+      setError(data.error || 'Failed to save entry');
+      return;
+    }
+    setEditing(null);
     load();
   }
 
   async function remove(id: string) {
-    await fetch('/api/portal/knowledge', {
+    if (!window.confirm('Delete this knowledge entry? This cannot be undone.')) return;
+    setError('');
+    const res = await fetch('/api/portal/knowledge', {
       method: 'DELETE',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ id }),
     });
+    if (!res.ok) {
+      const data = await res.json().catch(() => ({}));
+      setError(data.error || 'Failed to delete entry');
+      return;
+    }
     load();
   }
 
@@ -89,6 +104,8 @@ export default function PortalKnowledgePage() {
           Add Entry
         </button>
       </div>
+
+      {error && <p className="text-sm text-red-400 font-mono mb-4">{error}</p>}
 
       {editing && (
         <div className="bg-bg-surface border border-border-subtle rounded-lg p-6 mb-6 space-y-4">

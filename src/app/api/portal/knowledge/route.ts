@@ -79,7 +79,9 @@ export async function DELETE(req: NextRequest) {
   const { id } = await req.json();
   if (!id) return NextResponse.json({ error: 'id is required' }, { status: 400 });
 
-  await supabase.from('knowledge_base').delete().eq('id', id).eq('client_id', session.clientId);
+  const { error: dbError } = await supabase.from('knowledge_base').delete().eq('id', id).eq('client_id', session.clientId);
+
+  if (dbError) return NextResponse.json({ error: dbError.message }, { status: 500 });
 
   return NextResponse.json({ success: true });
 }

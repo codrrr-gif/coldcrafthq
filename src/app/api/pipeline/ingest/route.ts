@@ -7,7 +7,7 @@
 
 import { NextRequest, NextResponse } from 'next/server';
 import { supabase } from '@/lib/supabase/client';
-import { runGoogleSearch, runLinkedInJobsSearch, runProductHuntSearch, runTwitterSearch, runCrunchbaseActivity } from '@/lib/apify';
+import { runGoogleSearch, runLinkedInJobsSearch, runTwitterSearch } from '@/lib/apify';
 import { requireSecret } from '@/lib/auth/api-auth';
 
 export const dynamic = 'force-dynamic';
@@ -34,15 +34,13 @@ async function handler(req: NextRequest) {
         let run: { runId: string; datasetId: string };
 
         if (source.name === 'linkedin_jobs_sales') {
-          run = await runLinkedInJobsSearch(source.search_queries as string[], 'United States', 100);
-        } else if (source.name === 'product_hunt_launches') {
-          run = await runProductHuntSearch(50);
+          run = await runLinkedInJobsSearch(source.search_queries as string[], 'United States', 300);
         } else if (source.name === 'twitter_signals') {
-          run = await runTwitterSearch(source.search_queries as string[], 100);
-        } else if (source.name === 'crunchbase_activity') {
-          run = await runCrunchbaseActivity(source.search_queries as string[], 200);
+          run = await runTwitterSearch(source.search_queries as string[], 150);
         } else {
-          run = await runGoogleSearch(source.search_queries as string[], 5);
+          // All other sources use Google Search — funding, leadership, crunchbase,
+          // product hunt, G2, Indeed, tech news, expansion signals
+          run = await runGoogleSearch(source.search_queries as string[], 10);
         }
 
         runs.push({ source: source.name, ...run });

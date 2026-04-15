@@ -199,16 +199,44 @@ export async function tagLead(
 }
 
 // Delete a lead from campaign
+// v2 bulk-delete requires lead IDs, so we look up the ID first via /leads/list.
 export async function deleteLead(
   campaignId: string,
   leadEmail: string
 ): Promise<void> {
+  // Step 1: Find the lead's ID via /leads/list
+  const listRes = await fetch(`${API_BASE}/leads/list`, {
+    method: 'POST',
+    headers: headers(leadEmail),
+    body: JSON.stringify({
+      campaign: campaignId,
+      contacts: [leadEmail],
+      limit: 1,
+    }),
+    signal: AbortSignal.timeout(15000),
+  });
+
+  if (!listRes.ok) {
+    const text = await listRes.text();
+    throw new Error(`Instantly deleteLead lookup failed: ${listRes.status} ${text}`);
+  }
+
+  const listData = await listRes.json();
+  const leads = listData.data || listData.items || listData || [];
+  const lead = Array.isArray(leads) ? leads[0] : null;
+
+  if (!lead?.id) {
+    // Lead not found in campaign — already removed or never existed
+    return;
+  }
+
+  // Step 2: Bulk-delete by ID
   const res = await fetch(`${API_BASE}/leads`, {
     method: 'DELETE',
     headers: headers(leadEmail),
     body: JSON.stringify({
       campaign_id: campaignId,
-      email: leadEmail,
+      ids: [lead.id],
     }),
     signal: AbortSignal.timeout(15000),
   });
@@ -321,7 +349,7 @@ export async function addLeadsToCampaign(
 
 // Get lead labels (used for initial setup)
 export async function getLeadLabels(): Promise<{ id: string; name: string }[]> {
-  const res = await fetch(`${API_BASE}/leads/labels`, {
+  const res = await fetch(`${API_BASE}/lead-labels`, {
     headers: headers(),
     signal: AbortSignal.timeout(15000),
   });
@@ -332,7 +360,7 @@ export async function getLeadLabels(): Promise<{ id: string; name: string }[]> {
   }
 
   const data = await res.json();
-  return data.data || data || [];
+  return data.items || data.data || data || [];
 }
 
 export async function pauseCampaign(campaignId: string): Promise<boolean> {

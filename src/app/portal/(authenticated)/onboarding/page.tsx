@@ -54,17 +54,18 @@ export default function OnboardingPage() {
     const data = await res.json();
 
     if (data.success) {
-      setSteps((prev) =>
-        prev.map((s) => (s.category === activeStep ? { ...s, completed: true } : s))
-      );
       setContent('');
 
       if (data.all_complete) {
+        setSteps((prev) => prev.map((s) => ({ ...s, completed: true })));
         setActiveStep(null);
       } else {
-        const updated = steps.map((s) => (s.category === activeStep ? { ...s, completed: true } : s));
-        const next = updated.find((s) => !s.completed);
-        if (next) setActiveStep(next.category);
+        setSteps((prev) => {
+          const updated = prev.map((s) => (s.category === activeStep ? { ...s, completed: true } : s));
+          const next = updated.find((s) => !s.completed);
+          if (next) setActiveStep(next.category);
+          return updated;
+        });
       }
     }
 

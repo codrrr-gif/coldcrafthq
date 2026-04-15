@@ -4,9 +4,6 @@
 
 ---
 
-## Owner & Preferences
-
-**Matt** runs ColdCraft HQ, a B2B cold email agency that builds and manages cold outreach infrastructure for clients. He learned from Lead Gen Jay (mentor who sells ReplyJI 2.0 for $2.5k on n8n/Make.com). Matt prefers to build tools himself rather than buy them.
 
 **Working style:**
 - Action-oriented. Wants things built, not explained.
@@ -34,6 +31,9 @@ ColdCraft HQ is a **fully autonomous B2B outbound sales platform** that:
 12. **Runs A/B campaign experiments** (per-signal-type variant routing, round-robin assignment, reply rate + revenue tracking)
 13. **Attributes revenue to signals** (traces won/lost deals back to originating signal source, feeds into learning optimizer)
 
+14. **Client portal for white-label transparency** (per-client dashboard, meetings, reports, billing, activity feed, knowledge base, request queue)
+15. **Automated reporting** (weekly/monthly report generation, churn detection with 4 risk factors)
+
 The system replaces ReplyJI 2.0 ($2.5k + n8n/Make.com subscription + OpenRouter markup) with self-hosted, direct API, zero middleman.
 
 ---
@@ -58,6 +58,8 @@ The system replaces ReplyJI 2.0 ($2.5k + n8n/Make.com subscription + OpenRouter 
 | CRM | Close CRM | REST API + MCP server for tool access |
 | Meeting Booking | Calendly | HMAC-SHA256 verified webhooks |
 | Notifications | Slack | Block Kit messages for hot leads, auto-sends, legal threats |
+| Auth | NextAuth v4 (JWT) | Dual credentials providers (admin env-based + portal DB-based) |
+| Payments | Stripe | Customer + subscription provisioning, invoice sync |
 | CSS | Tailwind CSS 3.4 | Custom dark theme with Satoshi/JetBrains Mono/Instrument Serif |
 | Animation | Framer Motion | Landing page only |
 | Icons | Lucide React | Dashboard + components |
@@ -122,6 +124,21 @@ coldcrafthq/
 │   │   │   │   ├── results/[jobId]/     # Get verification results
 │   │   │   │   ├── single/              # Verify one email
 │   │   │   │   └── status/[jobId]/      # Job progress polling
+│   │   │   ├── admin/
+│   │   │   │   ├── clients/             # GET list + POST create (Stripe provisioning)
+│   │   │   │   ├── clients/invite/      # POST generate JWT invite link
+│   │   │   │   └── requests/            # GET all + PUT [id] (resolve/respond)
+│   │   │   ├── portal/
+│   │   │   │   ├── dashboard/           # Client KPIs (leads, replies, meetings, health)
+│   │   │   │   ├── onboarding/          # Onboarding step tracking
+│   │   │   │   ├── activity/            # Activity feed with type filter
+│   │   │   │   ├── requests/            # GET + POST client requests
+│   │   │   │   ├── meetings/            # Client meetings list
+│   │   │   │   ├── knowledge/           # Client knowledge base CRUD
+│   │   │   │   ├── billing/             # Stripe invoices + portal link
+│   │   │   │   ├── reports/             # Weekly/monthly reports
+│   │   │   │   ├── settings/            # Branding + team members
+│   │   │   │   └── invite/accept/       # POST verify JWT + set password
 │   │   │   ├── dashboard/analytics/     # Unified analytics aggregation API
 │   │   │   ├── instantly/
 │   │   │   │   ├── experiments/         # A/B experiment CRUD
@@ -146,6 +163,22 @@ coldcrafthq/
 │   │   │   ├── tam/                    # TAM discovery map
 │   │   │   └── verify/                 # Email verification UI
 │   │   │
+│   │   ├── portal/
+│   │   │   ├── layout.tsx               # SessionProvider wrapper
+│   │   │   ├── login/page.tsx           # Portal login (email + password)
+│   │   │   ├── invite/page.tsx          # Set password from invite link
+│   │   │   └── (authenticated)/
+│   │   │       ├── layout.tsx           # 8-tab portal nav (useSession)
+│   │   │       ├── dashboard/           # Client KPI dashboard
+│   │   │       ├── onboarding/          # Guided onboarding steps
+│   │   │       ├── activity/            # Activity feed timeline
+│   │   │       ├── requests/            # Submit + track requests
+│   │   │       ├── meetings/            # Meetings list
+│   │   │       ├── knowledge/           # Knowledge base viewer
+│   │   │       ├── billing/             # Invoices + Stripe portal
+│   │   │       ├── reports/             # Weekly/monthly reports
+│   │   │       └── settings/            # Branding + team settings
+│   │   │
 │   │   ├── book/                        # Booking page
 │   │   ├── fonts/                       # Custom web fonts
 │   │   ├── layout.tsx                   # Root layout (Analytics + Speed Insights)
@@ -168,9 +201,10 @@ coldcrafthq/
 │       ├── ai/
 │       │   ├── auto-send.ts             # Confidence-based auto-send + timeout fallback
 │       │   ├── categorize.ts            # 7-category reply classification (Claude)
-│       │   ├── draft-reply.ts           # Playbook + research + knowledge drafting (Claude)
+│       │   ├── draft-reply.ts           # Playbook + research + knowledge drafting (Claude, CALENDLY_LINK injected)
 │       │   ├── outcomes.ts              # Self-learning: outcome scoring, lessons, threshold tuning
-│       │   ├── playbooks.ts             # 17 sub-category reply frameworks
+│       │   ├── playbooks.ts             # 17 sub-category reply frameworks (each has follow_up_action)
+│       │   ├── reply-validator.ts       # Pre-send validation (placeholders, em dashes, exclamation marks)
 │       │   └── train.ts                 # Training examples + knowledge base CRUD (OpenAI embeddings)
 │       ├── champions/
 │       │   ├── job-change-detector.ts   # LinkedIn job change detection
@@ -239,7 +273,10 @@ coldcrafthq/
 │       │   ├── migration-v4-verify.sql    # V4: verification_jobs, verification_results, domain_cache
 │       │   ├── migration-v4-outcomes.sql  # V4: email_outcomes (bounce history)
 │       │   ├── migration-v5-gtm.sql       # V5: domain_patterns, signal_sources, raw_signals, pipeline_leads
-│       │   └── migration-v8-advancement.sql  # V8: close_sync_log, revenue_attribution, account_health, ab_experiments
+│       │   ├── migration-v8-advancement.sql  # V8: close_sync_log, revenue_attribution, account_health, ab_experiments
+│       │   ├── migration-v9-portal.sql      # V9: clients, client_users, client_contacts, meetings, invoices, reports, activity_feed, client_requests
+│       │   ├── migration-v9-client-id.sql   # V9: adds client_id to replies + pipeline_leads, backfills default client
+│       │   └── migration-v10-followups.sql  # V10: scheduled_followups table + try_acquire_cron_lock function
 │       ├── tam/
 │       │   ├── company-discovery.ts     # Crunchbase + LinkedIn TAM discovery
 │       │   └── company-scorer.ts        # TAM scoring and tier assignment
@@ -260,15 +297,26 @@ coldcrafthq/
 │       │   ├── syntax.ts              # Layer 1: RFC 5322 + typo detection
 │       │   ├── typo-map.ts            # Common domain typos (gmai.com → gmail.com)
 │       │   └── types.ts               # Verification type definitions
+│       ├── followups/
+│       │   └── scheduler.ts            # Playbook follow-up scheduler (3/30/45/60-day delays, OOO return dates)
 │       ├── voice/
-│       │   ├── call-scheduler.ts       # D5 voice follow-up orchestration
+│       │   ├── call-scheduler.ts       # D5 voice follow-up (batched 5 concurrent, 25/day cap)
+│       │   ├── transcript-classifier.ts # Claude-powered 7-outcome transcript classification
 │       │   └── vapi-client.ts          # Vapi AI voice call REST client
+│       ├── portal/
+│       │   ├── types.ts               # Client, ClientUser, Meeting, Invoice, Report, ActivityType, RequestType, PortalSession
+│       │   ├── activity.ts            # insertActivity() — fire-and-forget activity feed
+│       │   ├── auth.ts                # requirePortalSession() — JWT session extraction
+│       │   ├── stripe.ts              # getStripe() — lazy-init Stripe client
+│       │   └── report-metrics.ts      # gatherMetrics() — parallel queries for report generation
+│       ├── auth.ts                    # NextAuth config: dual credentials providers (admin + portal)
 │       ├── apify.ts                    # Apify actor control (Google Search, LinkedIn Jobs, Product Hunt, Twitter, Crunchbase, LinkedIn People)
-│       ├── instantly.ts                # Instantly.ai client (dual key round-robin, listSendingAccounts)
-│       ├── instantly-health.ts         # Account health monitoring (bounce/reply aggregates, scoring)
+│       ├── instantly.ts                # Instantly.ai client (dual key round-robin, listSendingAccounts, pauseCampaign)
+│       ├── instantly-health.ts         # Account health monitoring (bounce/reply aggregates, scoring, auto-pause at 3%)
 │       ├── instantly-experiments.ts    # A/B campaign experiments (create, assign, results)
 │       ├── perplexity.ts               # Perplexity research (3 parallel queries)
-│       ├── slack.ts                    # Slack Block Kit notifications + notifySlack public wrapper
+│       ├── slack.ts                    # Slack Block Kit notifications + trackServiceFailure (3-in-10min alerting)
+│       ├── cron-lock.ts               # Atomic cron lock via try_acquire_cron_lock Postgres function
 │       └── types.ts                    # Core Reply Engine types
 │
 ├── scripts/
@@ -292,6 +340,8 @@ coldcrafthq/
 │       └── specs/
 │           └── 2026-03-24-reverse-lead-magnets-pre-call-video-design.md
 │
+├── e2e/                               # Playwright E2E tests (202 tests, 14 spec files)
+├── playwright.config.ts               # Playwright config (localhost:3099, chromium)
 ├── .claude-flow/hive-mind/            # Claude Flow multi-agent state
 ├── .firecrawl/                        # Firecrawl transcript cache
 ├── vercel.json                        # Cron jobs + framework config
@@ -363,6 +413,27 @@ Added to `replies`: parent_reply_id (chain detection), outcome, outcome_evaluate
 | `ab_experiments` | A/B experiment definitions (base + variant campaigns per signal type) |
 | `ab_experiment_leads` | Per-lead experiment variant assignment with round-robin tracking |
 
+### V9 — Client Portal
+| Table | Purpose |
+|-------|---------|
+| `clients` | Multi-tenant client records (name, slug, logo, colors, Stripe IDs, monthly_retainer, status: onboarding/active/paused/churned) |
+| `client_users` | Portal user accounts (email, password_hash, role: owner/member/viewer, invite_token, accepted_at) |
+| `client_contacts` | Per-client contact directory |
+| `meetings` | Meetings per client (prospect_name, calendly_event_id, status) |
+| `invoices` | Invoice records synced from Stripe (stripe_invoice_id, amount, status, period) |
+| `reports` | Weekly/monthly reports with JSONB metrics snapshot |
+| `activity_feed` | Timeline events per client (type: campaign_launched, reply_received, meeting_booked, etc.) |
+| `client_requests` | Client request queue (type: pause_campaign, update_icp, etc., status: pending/in_progress/resolved) |
+
+Also adds `client_id` to `replies` and `pipeline_leads` tables for multi-tenant data isolation.
+
+### V10 — Follow-Up Scheduler
+| Table | Purpose |
+|-------|---------|
+| `scheduled_followups` | Deferred follow-up actions from playbooks (lead_email, action, scheduled_for, status: pending/sent/failed/cancelled) |
+
+Also adds `try_acquire_cron_lock` Postgres function for atomic cron lock acquisition.
+
 ---
 
 ## Cron Jobs (vercel.json)
@@ -377,6 +448,9 @@ Added to `replies`: parent_reply_id (chain detection), outcome, outcome_evaluate
 | :03, :33 every hour | `/api/cron/sync-close` | Bi-directional Close ↔ Instantly reverse sync (watermark polling) |
 | Daily 13:03 UTC | `/api/cron/revenue-check` | Revenue attribution — trace won/lost deals to signal source |
 | Daily 12:07 UTC | `/api/cron/account-health` | Sending account health monitoring + Slack alerts |
+| Monday 13:00 UTC | `/api/cron/weekly-report` | Generate weekly reports for all active clients |
+| 1st of month 13:00 UTC | `/api/cron/monthly-report` | Generate monthly reports for all active clients |
+| Daily 14:00 UTC | `/api/cron/churn-detection` | Check 4 risk factors (no login, no meetings, overdue invoices, pending pauses) → Slack warning |
 
 ---
 
@@ -385,17 +459,19 @@ Added to `replies`: parent_reply_id (chain detection), outcome, outcome_evaluate
 ### 1. Instantly Reply Webhook (`/api/webhooks/instantly`)
 This is the **main orchestrator** for the reply engine:
 1. Validates Bearer token webhook secret
-2. Records email outcome as 'replied' (non-blocking)
-3. Fetches full thread from Instantly via `getThread()`
-4. Claude categorizes reply → category, sub_category, confidence, tone, urgency
-5. **Hard No**: auto-tags, deletes from campaign, blocks email, alerts on legal threats
-6. **Interested/Soft No/Custom**: tags in Instantly, drafts reply with playbooks + research + knowledge
-7. Chain detection: finds parent reply (if follow-up) and scores parent's outcome
-8. Stores everything in `replies` table
-9. Auto-send check: `shouldAutoSend()` → `executeAutoSend()` if high confidence
-10. CRM sync: fire-and-forget `markInterestedInCrm()` for interested leads
-11. Slack notifications based on urgency
-12. Conversation routing: fire-and-forget `routeInboundReply()`
+2. Idempotency check via message_hash (SHA-256 of email+text, 5min window)
+3. Records email outcome as 'replied' (non-blocking)
+4. Fetches full thread from Instantly via `getThread()`
+5. Claude categorizes reply → category, sub_category, confidence, tone, urgency
+6. **Hard No**: auto-tags, deletes from campaign, blocks email, alerts on legal threats
+7. **Interested/Soft No/Custom**: tags in Instantly, drafts reply with playbooks + research + knowledge (CALENDLY_LINK injected into prompt)
+8. Chain detection: finds parent reply (if follow-up) and scores parent's outcome
+9. Stores everything in `replies` table
+10. Auto-send check: `shouldAutoSend()` → `executeAutoSend()` if high confidence. Reply validator blocks >1 em dash or >1 exclamation.
+11. Follow-up scheduling: looks up playbook `follow_up_action` → creates `scheduled_followups` record (3/30/45/60-day delays, OOO return date parsing)
+12. CRM sync: fire-and-forget `markInterestedInCrm()` for interested leads
+13. Slack notifications based on urgency
+14. Conversation routing: fire-and-forget `routeInboundReply()`
 
 ### 2. Lead Enrichment Pipeline (`/api/pipeline/process`)
 1. Signal ingested → `raw_signals` table
@@ -425,6 +501,27 @@ This is the **main orchestrator** for the reply engine:
 D1: Email (Instantly) + LinkedIn connect (HeyReach)
 D5: LinkedIn DM (HeyReach) + Voice call (Vapi) if no email reply
 ```
+LinkedIn currently disabled (warming 2 accounts, ~June 2026). Gated by `HEYREACH_API_KEY` env var.
+
+### 4.5. Vapi Voice Webhook (`/api/webhooks/vapi`)
+1. Validates Vapi secret header
+2. Idempotency check: skips if `voice_calls.status = 'completed'` for this callId
+3. Extracts transcript from artifact (current) or flat (legacy) payload
+4. Claude classifies transcript → 7 outcomes (interested, not_interested, callback_requested, meeting_booked, voicemail, wrong_number, no_answer)
+5. Updates voice_calls record (status=completed, transcript, outcome, duration)
+6. Updates touchpoint status
+7. Logs activity to Close CRM (fire-and-forget)
+8. If interested/meeting_booked → marks interested in CRM + sends follow-up email with Calendly link via Instantly
+9. Feeds meaningful transcripts into conversation auto-router
+10. If not_interested → opts out lead
+11. If callback_requested → schedules callback voice call (2 days later)
+
+### 4.6 Follow-Up Scheduler (daily cron)
+1. `processDueFollowups()` runs as part of auto-send cron
+2. Queries `scheduled_followups` WHERE status=pending AND scheduled_for <= now
+3. Looks up lead context from pipeline_leads
+4. Sends follow-up via Instantly `sendReply()` with human-sounding body per action type
+5. Marks record as sent or failed
 
 ### 5. CRM Lifecycle (Close)
 1. After Instantly push → `syncLeadToCrm()` creates lead with signal context, sets "Cold Outreach" status
@@ -530,6 +627,8 @@ Scores are dynamically adjusted by the V7 self-learning layer based on actual co
 | Vapi | AI voice calls with transcript + outcome | `VAPI_API_KEY`, `VAPI_PHONE_NUMBER_ID`, `VAPI_ASSISTANT_ID` |
 | Close CRM | CRM pipeline, leads, opportunities, notes | `CLOSE_CRM_API_KEY` |
 | Calendly | Meeting booking webhooks | `CALENDLY_SIGNING_SECRET`, `CALENDLY_LINK` |
+| Stripe | Client billing (customers, subscriptions, invoices) | `STRIPE_SECRET_KEY`, `STRIPE_DEFAULT_PRICE_ID` |
+| NextAuth | JWT auth with dual credentials providers | `NEXTAUTH_SECRET`, `NEXTAUTH_URL`, `AUTH_EMAIL`, `AUTH_PASSWORD` |
 | Slack | Notifications (hot leads, auto-sends, legal threats) | `SLACK_WEBHOOK_URL` |
 
 ---
@@ -600,6 +699,16 @@ CALENDLY_SIGNING_SECRET=
 # Notifications
 SLACK_WEBHOOK_URL=
 
+# Auth (NextAuth)
+AUTH_EMAIL=                            # Admin login email
+AUTH_PASSWORD=                         # Admin login password
+NEXTAUTH_SECRET=                       # JWT signing secret
+NEXTAUTH_URL=https://www.coldcrafthq.com
+
+# Stripe (client billing)
+STRIPE_SECRET_KEY=
+STRIPE_DEFAULT_PRICE_ID=              # Default subscription price
+
 # Security
 WEBHOOK_SECRET=
 CRON_SECRET=
@@ -636,11 +745,23 @@ NEXT_PUBLIC_APP_URL=https://coldcrafthq.com
 
 12. **Workspace-level health distribution** — email_outcomes lacks from_email, so account health is computed at workspace level and distributed proportionally by each account's daily_limit. Health score: `100 - bounceRate*200 + replyRate*50`.
 
-13. **Cross-system blocklist** — Hard bounces trigger coordinated blocks across Instantly (email block) + Close CRM (Bad Fit status + note + activity log). Single bounce event, multi-system response.
+13. **Multi-tenant client isolation** — Portal queries filter by `client_id` from JWT session. Middleware enforces clientId presence on all `/portal/*` and `/api/portal/*` routes. Activity feed inserts are fire-and-forget from existing webhooks (Instantly, Calendly).
+
+14. **Cross-system blocklist** — Hard bounces trigger coordinated blocks across Instantly (email block) + Close CRM (Bad Fit status + note + activity log). Single bounce event, multi-system response.
+
+15. **Atomic cron locking** — `try_acquire_cron_lock` Postgres function does a single `UPDATE ... WHERE locked_until < now()` followed by `INSERT ON CONFLICT DO NOTHING` — no race condition between concurrent instances.
+
+16. **Service failure alerting** — `trackServiceFailure()` in slack.ts tracks consecutive failures per service (Vapi, Claude, Instantly, Perplexity). After 3 failures in 10 minutes, fires a Slack alert. Resets per serverless instance window.
+
+17. **Bounce rate auto-pause** — `instantly-health.ts` pauses all active Instantly campaigns when workspace bounce rate exceeds 3%. Sends Slack alert with instructions to investigate before resuming.
+
+18. **Anti-AI reply enforcement** — Two-layer defense: (1) draft-reply prompt has ANTI-AI PATTERNS section banning em dashes, qualifiers, hedging, mirroring, filler transitions; (2) reply-validator.ts rejects replies with >1 em dash or >1 exclamation before auto-send.
+
+19. **Voice call batching** — Call scheduler processes leads in batches of 5 concurrent via `Promise.allSettled`, with a 25 calls/day cap checked against `voice_calls` table.
 
 ---
 
-## Dashboard Pages (10 tabs)
+## Dashboard Pages (12 tabs)
 
 | Page | Path | Purpose |
 |------|------|---------|
@@ -653,7 +774,52 @@ NEXT_PUBLIC_APP_URL=https://coldcrafthq.com
 | Analytics | `/dashboard/analytics` | Unified analytics: pipeline funnel, signal ROI, account health, A/B experiments, revenue wins |
 | CRM | `/dashboard/crm` | Live Close CRM pipeline grouped by opportunity stage |
 | Knowledge | `/dashboard/knowledge` | CRUD for AI knowledge base entries |
+| Clients | `/dashboard/clients` | Client list with status badges, MRR, add new client form |
+| Requests | `/dashboard/requests` | Client request queue with inline respond/resolve UI |
 | Settings | `/dashboard/settings` | Webhook URL, env var guide, setup instructions |
+
+---
+
+## Client Portal (8 tabs)
+
+| Page | Path | Purpose |
+|------|------|---------|
+| Dashboard | `/portal/dashboard` | KPIs: leads pushed, replies, meetings, account health |
+| Onboarding | `/portal/onboarding` | Guided setup steps with progress indicator |
+| Activity | `/portal/activity` | Timeline feed with type filter (campaign, reply, meeting, etc.) |
+| Requests | `/portal/requests` | Submit requests (pause campaign, update ICP, etc.) |
+| Meetings | `/portal/meetings` | Meeting list with prospect details |
+| Knowledge | `/portal/knowledge` | Client knowledge base CRUD |
+| Billing | `/portal/billing` | Stripe invoices + portal link |
+| Reports | `/portal/reports` | Weekly/monthly report viewer |
+| Settings | `/portal/settings` | Branding controls + team members |
+
+### Auth Architecture
+- **Admin login** (`/login`): env-based credentials (`AUTH_EMAIL` / `AUTH_PASSWORD`), role=admin
+- **Portal login** (`/portal/login`): DB-based credentials (client_users table), bcrypt password hash, requires accepted_at
+- **JWT strategy**: token carries role, clientId, clientName
+- **Middleware** (`src/middleware.ts`): admin routes require role=admin, portal routes require clientId, portal API requires clientId (except `/api/portal/invite`)
+- **Invitation flow**: Admin generates JWT invite link (7d expiry) → client visits `/portal/invite?token=...` → sets password → account activated
+
+### Portal Key Flows
+
+**9. Client Onboarding**
+1. Admin creates client at `/dashboard/clients/new` (name, billing email, monthly retainer, admin email)
+2. POST `/api/admin/clients` → creates Stripe customer + subscription, inserts client + client_user (owner), Slack notification
+3. Admin generates invite link at `/dashboard/clients` → POST `/api/admin/clients/invite` → JWT with clientId/userId/email
+4. Client clicks invite link → `/portal/invite?token=...` → sets password → POST `/api/portal/invite/accept` → bcrypt hash, set accepted_at, activity log
+5. Client logs in at `/portal/login` → NextAuth portal-credentials provider → JWT with clientId/clientName/role
+
+**10. Activity Feed Wiring**
+- Instantly reply webhook → insertActivity(clientId, 'reply_received', ...)
+- Calendly meeting webhook → insertActivity(clientId, 'meeting_booked', ...)
+- Admin request resolution → insertActivity(clientId, 'request_update', ...)
+- Cron reports → insertActivity(clientId, 'report_generated', ...)
+
+**11. Automated Reporting**
+- Weekly (Monday 9am ET): gatherMetrics() queries replies, meetings, account_health_snapshots, clients → stores report with JSONB metrics
+- Monthly (1st of month): same pattern, 30-day window
+- Churn detection (daily): checks 4 risk factors per client → Slack warning for at-risk clients
 
 ---
 
@@ -667,7 +833,7 @@ NEXT_PUBLIC_APP_URL=https://coldcrafthq.com
 
 4. **Reacher VPS (Port 25)** — Netcup VPS at 152.53.240.120. Port 25 ticket was submitted 2026-03-23. Check if it's been approved.
 
-5. **Vercel Pro plan** — Upgraded from Hobby. 8 cron jobs configured, offset minutes to avoid stampede (e.g., :03, :07, :33).
+5. **Vercel Pro plan** — Upgraded from Hobby. 11 cron jobs configured, offset minutes to avoid stampede (e.g., :03, :07, :33).
 
 6. **Instantly dual keys** — Uses round-robin between INSTANTLY_API_KEY and INSTANTLY_API_KEY_2 for load balancing and rate limit mitigation.
 
@@ -683,12 +849,20 @@ NEXT_PUBLIC_APP_URL=https://coldcrafthq.com
 
 12. **Pipeline lead fields** — Uses `signal_score` (NOT `icp_score`). The field `icp_score` does not exist.
 
+13. **Portal invite API must be public** — `/api/portal/invite/accept` is excluded from middleware auth. Without the `!pathname.startsWith('/api/portal/invite')` check, invite acceptance returns 401 and the entire onboarding flow breaks.
+
+14. **NextAuth requires authOptions** — Always pass `authOptions` to `getServerSession(authOptions)`. Without it, NextAuth can't resolve providers and returns null sessions. The shared helper is at `src/lib/auth/api-auth.ts`.
+
+15. **Portal SessionProvider** — The portal root layout (`src/app/portal/layout.tsx`) wraps children in `<SessionProvider>`. Without this, `useSession()` in the authenticated layout crashes.
+
+16. **Supabase no-store** — The Supabase client uses `cache: 'no-store'` on all fetches to prevent Next.js from caching DB queries in server components.
+
 ---
 
-## Current State (as of 2026-03-25)
+## Current State (as of 2026-03-28)
 
 **Built and operational:**
-- Reply Engine V3 (categorization, drafting, auto-send, self-improvement loop)
+- Reply Engine V3 (categorization, drafting, auto-send, self-improvement loop, CALENDLY_LINK injection, anti-AI pattern validation)
 - Email Verification Pipeline (6 layers, bulk + single)
 - Email Finder (FindyMail + pattern cache + SMTP)
 - GTM Intelligence Engine (3 signal sources, enrichment pipeline)
@@ -697,9 +871,17 @@ NEXT_PUBLIC_APP_URL=https://coldcrafthq.com
 - Close CRM Integration (3 lifecycle hooks + Calendly webhook + MCP server)
 - V8 Close + Instantly Advancement (8 systems: bi-directional sync, activity timeline, auto-blocklist, auto-opportunity enrichment, revenue attribution, account health, A/B experiments, analytics dashboard)
 - Marketing Landing Page (Hero, System, Process, Comparison, Deliverables, FAQ, CTA)
+- V9 Client Portal (multi-tenant portal with 8 client pages, admin client management, request queue, invitation flow, automated weekly/monthly reports, churn detection, activity feed wiring into existing webhooks, 202 E2E tests)
+- Vapi Voice Integration (Claude transcript classification, CRM sync, follow-up email with Calendly, callback scheduling, callId-based dedup, batched calls with 25/day cap)
+- Follow-Up Scheduler (playbook follow_up_action → scheduled_followups table → daily cron processing)
+- Service failure alerting (trackServiceFailure across Vapi/Claude/Instantly/Perplexity → Slack after 3 failures in 10min)
+- Bounce rate auto-pause (>3% → pauses all Instantly campaigns + Slack alert)
+- Atomic cron locks (try_acquire_cron_lock Postgres function, no race condition)
 
-**Pending:**
-- Run `migration-v8-advancement.sql` against Supabase (5 new tables required for V8 crons)
+**Active channels:** Email (Instantly) + Voice (Vapi). LinkedIn disabled (~June 2026, warming 2 accounts). Gated by `HEYREACH_API_KEY`.
+
+**Pending (Monday 2026-03-30):**
+- Add 4 crons to vercel.json: auto-send (*/5), sync-close (0 */2), account-health (0 6), revenue-check (0 8)
 
 **Next to build (V3.5):**
 - A/B testing reply frameworks (infrastructure already in place)
@@ -743,11 +925,16 @@ Two setup scripts configure Close CRM for the ColdCraft pipeline:
 ## Dependencies
 
 **Runtime:**
+- `@playwright/test` — E2E testing (202 tests across 14 spec files)
 - `@anthropic-ai/sdk` ^0.39.0 — Claude API
 - `@supabase/supabase-js` ^2.49.0 — Database
 - `@vercel/analytics` ^2.0.1 — Web analytics
 - `@vercel/speed-insights` ^2.0.0 — Performance monitoring
 - `claude-flow` ^3.5.42 — Multi-agent orchestration
+- `bcrypt` — Password hashing for portal users
+- `jsonwebtoken` — JWT invite token generation/verification
+- `next-auth` v4 — Dual credentials providers (admin + portal)
+- `stripe` — Customer, subscription, and invoice management
 - `framer-motion` ^12.34.0 — Landing page animations
 - `lucide-react` ^0.577.0 — Icons
 - `mailchecker` ^6.0.20 — Email format validation

@@ -6,7 +6,7 @@ import BookingEmbed from "@/components/BookingEmbed";
 export const metadata: Metadata = {
   title: "Book a Strategy Call — ColdCraft HQ",
   description:
-    "Pick a time for a free 30-minute strategy call. We'll map out what your outbound system should look like.",
+    "Pick a time for a free 20-minute strategy call. We'll map out what your outbound system should look like.",
 };
 
 export default function BookPage() {

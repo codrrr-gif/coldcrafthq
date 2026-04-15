@@ -26,11 +26,16 @@ export async function scheduleFollowUp(params: {
 }): Promise<void> {
   let delayDays: number;
 
-  if (params.action === 'schedule_follow_up_from_ooo' && params.oooReturnDate) {
-    // OOO: schedule for return date + 1 day
-    const returnDate = new Date(params.oooReturnDate);
-    const now = new Date();
-    delayDays = Math.max(1, Math.ceil((returnDate.getTime() - now.getTime()) / (1000 * 60 * 60 * 24)) + 1);
+  if (params.action === 'schedule_follow_up_from_ooo') {
+    if (params.oooReturnDate) {
+      // OOO with parsed date: schedule for return date + 1 day
+      const returnDate = new Date(params.oooReturnDate);
+      const now = new Date();
+      delayDays = Math.max(1, Math.ceil((returnDate.getTime() - now.getTime()) / (1000 * 60 * 60 * 24)) + 1);
+    } else {
+      // OOO but date couldn't be parsed — default to 7 days
+      delayDays = 7;
+    }
   } else {
     delayDays = ACTION_DELAYS[params.action];
     if (!delayDays) return; // Unknown action — skip

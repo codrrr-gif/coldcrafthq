@@ -39,5 +39,16 @@ export function validateReplyContent(reply: string): ValidationResult {
     return { valid: false, reason: 'too_many_lines' };
   }
 
+  // Anti-AI pattern checks
+  const emDashCount = (reply.match(/—/g) || []).length;
+  if (emDashCount > 1) {
+    return { valid: false, reason: 'too_many_em_dashes' };
+  }
+
+  const exclamationCount = (reply.match(/!/g) || []).length;
+  if (exclamationCount > 1) {
+    return { valid: false, reason: 'too_many_exclamations' };
+  }
+
   return { valid: true };
 }

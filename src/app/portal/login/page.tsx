@@ -22,8 +22,8 @@ export default function PortalLoginPage() {
       redirect: false,
     });
 
-    if (result?.error) {
-      setError('Invalid email or password');
+    if (!result?.ok) {
+      setError(result?.error === 'CredentialsSignin' ? 'Invalid email or password' : 'Sign in failed. Please try again.');
       setLoading(false);
     } else {
       router.push('/portal/dashboard');

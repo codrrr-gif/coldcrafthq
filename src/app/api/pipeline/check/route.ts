@@ -13,9 +13,11 @@ import type { ParsedSignal } from '@/lib/gtm/types';
 import { parseFundingSignals } from '@/lib/signals/funding';
 import { parseJobPostingSignals } from '@/lib/signals/job-postings';
 import { parseLeadershipSignals } from '@/lib/signals/leadership';
-import { parseProductHuntSignals } from '@/lib/signals/product-hunt';
+import { parseProductHuntGoogleSignals } from '@/lib/signals/product-hunt-google';
 import { parseTwitterSignals } from '@/lib/signals/twitter';
-import { parseCrunchbaseActivitySignals } from '@/lib/signals/crunchbase-activity';
+import { parseG2IntentSignals } from '@/lib/signals/g2-intent';
+import { parseIndeedJobSignals } from '@/lib/signals/indeed-jobs';
+import { parseExpansionSignals } from '@/lib/signals/expansion';
 import { filterSignalByIcp } from '@/lib/signals/icp-filter';
 import { isBlockedDomain, isStaffingCompany } from '@/lib/pipeline/domain-quality';
 import { scoreSignal, MIN_SIGNAL_SCORE } from '@/lib/signals/scorer';
@@ -54,15 +56,19 @@ async function handler() {
         continue;
       }
 
-      const items = await getDatasetItems(runStatus.defaultDatasetId, 200);
+      const items = await getDatasetItems(runStatus.defaultDatasetId, 500);
 
       let parsed: ParsedSignal[] = [];
       if (source.name === 'google_news_funding') parsed = parseFundingSignals(items);
       else if (source.name === 'linkedin_jobs_sales') parsed = parseJobPostingSignals(items);
       else if (source.name === 'google_news_leadership') parsed = parseLeadershipSignals(items);
-      else if (source.name === 'product_hunt_launches') parsed = parseProductHuntSignals(items);
+      else if (source.name === 'product_hunt_launches') parsed = parseProductHuntGoogleSignals(items);
       else if (source.name === 'twitter_signals') parsed = parseTwitterSignals(items);
-      else if (source.name === 'crunchbase_activity') parsed = parseCrunchbaseActivitySignals(items);
+      else if (source.name === 'crunchbase_activity') parsed = parseFundingSignals(items);
+      else if (source.name === 'tech_news') parsed = parseFundingSignals(items);
+      else if (source.name === 'g2_reviews') parsed = parseG2IntentSignals(items);
+      else if (source.name === 'indeed_jobs') parsed = parseIndeedJobSignals(items);
+      else if (source.name === 'expansion_signals') parsed = parseExpansionSignals(items);
 
       let sourceIngested = 0;
 
