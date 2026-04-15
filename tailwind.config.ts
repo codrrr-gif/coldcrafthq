@@ -13,6 +13,7 @@ const config: Config = {
           primary: "#08090A",
           surface: "#111214",
           "surface-hover": "#191B1F",
+          elevated: "#16181C",
         },
         border: {
           subtle: "#1E2028",

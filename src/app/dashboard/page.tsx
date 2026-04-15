@@ -201,48 +201,29 @@ export default function DashboardPage() {
     <div className="space-y-5">
       {/* Stats */}
       {stats && (
-        <div className="grid grid-cols-3 md:grid-cols-6 gap-2.5">
-          {/* Primary metrics - larger */}
-          <div className="bg-bg-surface border border-border-subtle rounded-lg p-3.5 col-span-1">
-            <div className="font-mono text-[9px] tracking-wider uppercase text-text-tertiary">Total</div>
-            <div className="text-2xl font-bold text-text-primary mt-1">{stats.total}</div>
-          </div>
-          <div className="bg-bg-surface border border-border-subtle rounded-lg p-3.5 col-span-1">
-            <div className="font-mono text-[9px] tracking-wider uppercase text-amber-400/70">Pending</div>
-            <div className="text-2xl font-bold text-amber-400 mt-1">{stats.pending}</div>
-          </div>
-          <div className="bg-bg-surface border border-border-subtle rounded-lg p-3.5 col-span-1">
-            <div className="font-mono text-[9px] tracking-wider uppercase text-green-400/70">Sent</div>
-            <div className="text-2xl font-bold text-green-400 mt-1">{stats.sent}</div>
-          </div>
-          <div className="bg-bg-surface border border-border-subtle rounded-lg p-3.5 col-span-1">
-            <div className="font-mono text-[9px] tracking-wider uppercase text-purple-400/70">Auto-Sent</div>
-            <div className="text-2xl font-bold text-purple-400 mt-1">{stats.auto_sent}</div>
-          </div>
-          <div className="bg-bg-surface border border-border-subtle rounded-lg p-3.5 col-span-1">
-            <div className="font-mono text-[9px] tracking-wider uppercase text-accent-primary/70">Confidence</div>
-            <div className="text-2xl font-bold text-accent-primary mt-1">{Math.round(stats.avg_confidence * 100)}%</div>
-          </div>
-          <div className="bg-bg-surface border border-border-subtle rounded-lg p-3.5 col-span-1">
-            <div className="font-mono text-[9px] tracking-wider uppercase text-text-tertiary">Speed</div>
-            <div className="text-2xl font-bold text-text-secondary mt-1">
-              {stats.avg_response_time_ms ? `${(stats.avg_response_time_ms / 1000).toFixed(0)}s` : '--'}
+        <div className="grid grid-cols-3 md:grid-cols-7 gap-2">
+          {[
+            { label: 'Total', value: stats.total, color: 'text-text-primary', labelColor: 'text-text-tertiary' },
+            { label: 'Pending', value: stats.pending, color: 'text-amber-400', labelColor: 'text-amber-400/60' },
+            { label: 'Sent', value: stats.sent, color: 'text-green-400', labelColor: 'text-green-400/60' },
+            { label: 'Auto-Sent', value: stats.auto_sent, color: 'text-purple-400', labelColor: 'text-purple-400/60' },
+            { label: 'Confidence', value: `${Math.round(stats.avg_confidence * 100)}%`, color: 'text-accent-primary', labelColor: 'text-accent-primary/60' },
+            { label: 'Speed', value: stats.avg_response_time_ms ? `${(stats.avg_response_time_ms / 1000).toFixed(0)}s` : '--', color: 'text-text-secondary', labelColor: 'text-text-tertiary' },
+            ...(stats.outcomes && (stats.outcomes.reply_positive > 0 || stats.outcomes.meeting_booked > 0 || stats.outcomes.silence > 0)
+              ? [{ label: 'Win Rate', value: `${Math.round(stats.outcomes.win_rate * 100)}%`, color: 'text-green-400', labelColor: 'text-green-400/60' }]
+              : []),
+          ].map(({ label, value, color, labelColor }) => (
+            <div key={label} className="bg-bg-surface border border-border-subtle rounded-lg px-3.5 py-3">
+              <div className={`font-mono text-[9px] tracking-wider uppercase ${labelColor}`}>{label}</div>
+              <div className={`text-xl font-bold ${color} mt-0.5 tabular-nums`}>{value}</div>
             </div>
-          </div>
-          {stats.outcomes && (stats.outcomes.reply_positive > 0 || stats.outcomes.meeting_booked > 0 || stats.outcomes.silence > 0) && (
-            <div className="bg-bg-surface border border-border-subtle rounded-lg p-3.5 col-span-1">
-              <div className="font-mono text-[9px] tracking-wider uppercase text-green-400/70">Win Rate</div>
-              <div className="text-2xl font-bold text-green-400 mt-1">
-                {Math.round(stats.outcomes.win_rate * 100)}%
-              </div>
-            </div>
-          )}
+          ))}
         </div>
       )}
 
       {/* Category breakdown - compact row */}
       {stats && (stats.by_category.interested > 0 || stats.by_category.soft_no > 0 || stats.by_category.hard_no > 0) && (
-        <div className="flex items-center gap-4 px-1">
+        <div className="flex items-center gap-5 px-0.5">
           {[
             { label: 'Interested', count: stats.by_category.interested, color: 'text-green-400', bar: 'bg-green-400' },
             { label: 'Soft No', count: stats.by_category.soft_no, color: 'text-amber-400', bar: 'bg-amber-400' },
@@ -259,8 +240,8 @@ export default function DashboardPage() {
       )}
 
       {/* Filters */}
-      <div className="flex items-center gap-1.5 flex-wrap">
-        <span className="text-[10px] text-text-tertiary font-mono uppercase tracking-wider mr-1">Status</span>
+      <div className="flex items-center gap-1.5 flex-wrap py-1">
+        <span className="text-[10px] text-text-tertiary font-mono uppercase tracking-wider mr-0.5">Status</span>
         {[
           { key: 'all', label: 'All' },
           { key: 'pending', label: 'Pending' },
@@ -272,10 +253,10 @@ export default function DashboardPage() {
             <button
               key={f.key}
               onClick={() => applyFilter({ ...filter, status: f.key === 'all' ? undefined : f.key })}
-              className={`px-2.5 py-1 rounded text-[11px] font-mono transition-all duration-150 ${
+              className={`px-2.5 py-1 rounded-md text-[11px] font-mono transition-all duration-150 ${
                 isActive
-                  ? 'bg-accent-primary text-white shadow-sm shadow-accent-primary/20'
-                  : 'bg-bg-surface border border-border-subtle text-text-secondary hover:text-text-primary hover:border-border-hover'
+                  ? 'bg-accent-primary/15 text-accent-primary border border-accent-primary/25'
+                  : 'text-text-secondary hover:text-text-primary hover:bg-bg-surface-hover/50'
               }`}
             >
               {f.label}
@@ -283,8 +264,8 @@ export default function DashboardPage() {
           );
         })}
 
-        <div className="w-px h-4 bg-border-subtle mx-2" />
-        <span className="text-[10px] text-text-tertiary font-mono uppercase tracking-wider mr-1">Type</span>
+        <div className="w-px h-3.5 bg-border-subtle mx-1.5" />
+        <span className="text-[10px] text-text-tertiary font-mono uppercase tracking-wider mr-0.5">Type</span>
 
         {(Object.entries(categoryConfig) as [ReplyCategory, typeof categoryConfig.interested][]).map(
           ([key, cfg]) => {
@@ -293,10 +274,10 @@ export default function DashboardPage() {
               <button
                 key={key}
                 onClick={() => applyFilter({ ...filter, category: isActive ? undefined : key })}
-                className={`px-2.5 py-1 rounded text-[11px] font-mono transition-all duration-150 ${
+                className={`px-2.5 py-1 rounded-md text-[11px] font-mono transition-all duration-150 ${
                   isActive
                     ? `${cfg.bg} ${cfg.color} border`
-                    : 'bg-bg-surface border border-border-subtle text-text-secondary hover:text-text-primary hover:border-border-hover'
+                    : 'text-text-secondary hover:text-text-primary hover:bg-bg-surface-hover/50'
                 }`}
               >
                 {cfg.label}
@@ -308,7 +289,7 @@ export default function DashboardPage() {
         {(filter.status || filter.category) && (
           <button
             onClick={() => applyFilter({})}
-            className="px-2 py-1 rounded text-[10px] font-mono text-text-tertiary hover:text-text-primary transition-colors"
+            className="px-2 py-1 rounded-md text-[10px] font-mono text-text-tertiary hover:text-text-primary hover:bg-bg-surface-hover/50 transition-colors ml-1"
           >
             Clear
           </button>
@@ -329,14 +310,19 @@ export default function DashboardPage() {
             <SkeletonCard />
           </div>
         ) : replies.length === 0 ? (
-          <div className="text-center py-16">
-            <div className="text-text-tertiary mb-1.5 text-sm">
+          <div className="flex flex-col items-center justify-center py-20">
+            <div className="w-12 h-12 rounded-full bg-bg-surface border border-border-subtle flex items-center justify-center mb-4">
+              <svg className="w-5 h-5 text-text-tertiary" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M2.25 13.5h3.86a2.25 2.25 0 012.012 1.244l.256.512a2.25 2.25 0 002.013 1.244h3.218a2.25 2.25 0 002.013-1.244l.256-.512a2.25 2.25 0 012.013-1.244h3.859m-19.5.338V18a2.25 2.25 0 002.25 2.25h15A2.25 2.25 0 0021.75 18v-4.162c0-.224-.034-.447-.1-.661L19.24 5.338a2.25 2.25 0 00-2.15-1.588H6.911a2.25 2.25 0 00-2.15 1.588L2.35 13.177a2.25 2.25 0 00-.1.661z" />
+              </svg>
+            </div>
+            <div className="text-text-secondary text-sm font-medium mb-1">
               {filter.status || filter.category ? 'No replies match this filter' : 'No replies yet'}
             </div>
             {!filter.status && !filter.category && (
               <div className="text-xs text-text-tertiary">
                 Webhook:{' '}
-                <code className="font-mono bg-bg-surface px-1.5 py-0.5 rounded text-accent-primary text-[11px]">
+                <code className="font-mono bg-bg-surface px-1.5 py-0.5 rounded text-accent-primary/80 text-[11px]">
                   /api/webhooks/instantly
                 </code>
               </div>
@@ -351,12 +337,25 @@ export default function DashboardPage() {
               <button
                 key={reply.id}
                 onClick={() => openReply(reply)}
-                className={`w-full text-left bg-bg-surface border border-border-subtle rounded-lg p-4 hover:border-border-hover transition-all duration-150 border-l-2 ${cat.accent} group`}
+                className={`w-full text-left bg-bg-surface border border-border-subtle rounded-lg px-4 py-3.5 hover:border-border-hover hover:bg-bg-surface-hover/30 transition-all duration-150 border-l-2 ${cat.accent} group`}
               >
                 <div className="flex items-start justify-between gap-3">
                   <div className="flex-1 min-w-0">
-                    {/* Top row: badges + time */}
-                    <div className="flex items-center gap-1.5 mb-2 flex-wrap">
+                    {/* Name + company */}
+                    <div className="flex items-baseline gap-2 mb-1.5">
+                      <span className="text-[13px] text-text-primary font-medium truncate">
+                        {reply.lead_name || reply.lead_email}
+                      </span>
+                      {reply.lead_company && (
+                        <span className="text-xs text-text-tertiary truncate">{reply.lead_company}</span>
+                      )}
+                    </div>
+
+                    {/* Message preview */}
+                    <div className="text-xs text-text-secondary line-clamp-1 mb-2">{reply.original_message}</div>
+
+                    {/* Bottom row: badges */}
+                    <div className="flex items-center gap-1.5 flex-wrap">
                       <span className={`text-[10px] font-mono px-1.5 py-0.5 rounded ${cat.bg} ${cat.color} border`}>
                         {reply.sub_category
                           ? reply.sub_category.split('.')[1].replace(/_/g, ' ')
@@ -368,7 +367,7 @@ export default function DashboardPage() {
                       </span>
                       {reply.auto_sent && (
                         <span className="text-[10px] font-mono text-purple-400 bg-purple-400/10 px-1.5 py-0.5 rounded">
-                          Auto-sent
+                          Auto
                         </span>
                       )}
                       {reply.outcome && outcomeConfig[reply.outcome] && (
@@ -378,19 +377,6 @@ export default function DashboardPage() {
                       )}
                       {reply.confidence > 0 && <ConfidenceBar confidence={reply.confidence} />}
                     </div>
-
-                    {/* Name + company */}
-                    <div className="flex items-baseline gap-2 mb-0.5">
-                      <span className="text-sm text-text-primary font-medium truncate">
-                        {reply.lead_name || reply.lead_email}
-                      </span>
-                      {reply.lead_company && (
-                        <span className="text-xs text-text-tertiary truncate">{reply.lead_company}</span>
-                      )}
-                    </div>
-
-                    {/* Message preview */}
-                    <div className="text-xs text-text-secondary line-clamp-1">{reply.original_message}</div>
                   </div>
 
                   {/* Right side: time + draft indicator */}
@@ -423,7 +409,7 @@ export default function DashboardPage() {
         >
           <div
             ref={modalRef}
-            className="bg-bg-surface border border-border-subtle rounded-xl w-full max-w-4xl max-h-[90vh] overflow-y-auto shadow-2xl shadow-black/40"
+            className="bg-bg-surface border border-border-subtle rounded-xl w-full max-w-3xl max-h-[90vh] overflow-y-auto shadow-2xl shadow-black/50"
           >
             {/* Header */}
             <div className="flex items-center justify-between p-5 border-b border-border-subtle sticky top-0 bg-bg-surface/95 backdrop-blur-sm z-10 rounded-t-xl">
@@ -619,11 +605,11 @@ export default function DashboardPage() {
 
               {/* Actions */}
               {selectedReply.status === 'pending' && selectedReply.ai_reply && (
-                <div className="flex items-center gap-2.5 pt-3 border-t border-border-subtle">
+                <div className="flex items-center gap-2 pt-4 border-t border-border-subtle">
                   <button
                     onClick={() => handleApprove(selectedReply.id)}
                     disabled={actionLoading === selectedReply.id}
-                    className="flex-1 bg-green-500/10 border border-green-500/20 text-green-400 hover:bg-green-500/20 rounded-lg px-4 py-2.5 text-sm font-medium transition-all duration-150 disabled:opacity-50"
+                    className="flex-1 bg-green-500 text-white hover:bg-green-500/90 rounded-lg px-4 py-2.5 text-sm font-medium transition-all duration-150 disabled:opacity-50"
                   >
                     {actionLoading === selectedReply.id ? 'Sending...' : 'Approve & Send'}
                   </button>
@@ -637,7 +623,7 @@ export default function DashboardPage() {
                   <button
                     onClick={() => handleSkip(selectedReply.id)}
                     disabled={actionLoading === selectedReply.id}
-                    className="bg-bg-surface-hover border border-border-subtle text-text-secondary hover:text-text-primary rounded-lg px-4 py-2.5 text-sm transition-all duration-150 disabled:opacity-50"
+                    className="bg-bg-primary border border-border-subtle text-text-secondary hover:text-text-primary hover:border-border-hover rounded-lg px-4 py-2.5 text-sm transition-all duration-150 disabled:opacity-50"
                   >
                     Skip
                   </button>
