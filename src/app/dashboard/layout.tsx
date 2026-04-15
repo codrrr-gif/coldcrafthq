@@ -88,10 +88,12 @@ function NavLink({ item, pathname }: { item: NavItem; pathname: string }) {
           : 'text-text-secondary hover:text-text-primary hover:bg-bg-surface-hover/40'
       }`}
     >
-      {isActive && (
-        <span className="absolute left-0 top-1/2 -translate-y-1/2 w-[3px] h-4 rounded-r-full bg-accent-primary" />
-      )}
-      <span className={isActive ? 'text-accent-primary' : ''}>{item.icon}</span>
+      <span
+        className={`absolute left-0 top-1/2 -translate-y-1/2 w-[3px] rounded-r-full bg-accent-primary transition-all duration-200 ${
+          isActive ? 'h-4 opacity-100' : 'h-0 opacity-0'
+        }`}
+      />
+      <span className={`transition-colors duration-150 ${isActive ? 'text-accent-primary' : ''}`}>{item.icon}</span>
       <span className="font-medium">{item.label}</span>
       {item.badge && (
         <span className="ml-auto bg-accent-primary text-white text-[10px] font-medium px-1.5 py-0.5 rounded-full leading-none">
@@ -218,7 +220,9 @@ export default function DashboardLayout({
 
         {/* Content */}
         <main className="flex-1 overflow-y-auto">
-          <div className="max-w-[1200px] mx-auto px-6 py-5">{children}</div>
+          <div key={pathname} className="max-w-[1200px] mx-auto px-6 py-5 animate-fade-in">
+            {children}
+          </div>
         </main>
       </div>
     </div>

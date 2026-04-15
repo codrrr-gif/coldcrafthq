@@ -212,8 +212,12 @@ export default function DashboardPage() {
             ...(stats.outcomes && (stats.outcomes.reply_positive > 0 || stats.outcomes.meeting_booked > 0 || stats.outcomes.silence > 0)
               ? [{ label: 'Win Rate', value: `${Math.round(stats.outcomes.win_rate * 100)}%`, color: 'text-green-400', labelColor: 'text-green-400/60' }]
               : []),
-          ].map(({ label, value, color, labelColor }) => (
-            <div key={label} className="bg-bg-surface border border-border-subtle rounded-lg px-3.5 py-3">
+          ].map(({ label, value, color, labelColor }, i) => (
+            <div
+              key={label}
+              className="bg-bg-surface border border-border-subtle rounded-lg px-3.5 py-3 animate-fade-up"
+              style={{ animationDelay: `${i * 50}ms` }}
+            >
               <div className={`font-mono text-[9px] tracking-wider uppercase ${labelColor}`}>{label}</div>
               <div className={`text-xl font-bold ${color} mt-0.5 tabular-nums`}>{value}</div>
             </div>
@@ -297,7 +301,7 @@ export default function DashboardPage() {
       </div>
 
       {/* Reply List */}
-      <div className="space-y-1.5">
+      <div key={`${filter.status || 'all'}-${filter.category || 'all'}`} className="space-y-1.5 animate-fade-in">
         {loading ? (
           <div className="space-y-1.5">
             <SkeletonCard />
@@ -337,7 +341,7 @@ export default function DashboardPage() {
               <button
                 key={reply.id}
                 onClick={() => openReply(reply)}
-                className={`w-full text-left bg-bg-surface border border-border-subtle rounded-lg px-4 py-3.5 hover:border-border-hover hover:bg-bg-surface-hover/30 transition-all duration-150 border-l-2 ${cat.accent} group`}
+                className={`w-full text-left bg-bg-surface border border-border-subtle rounded-lg px-4 py-3.5 hover:border-border-hover hover:bg-bg-surface-hover/30 hover:-translate-y-px hover:shadow-lg hover:shadow-black/20 transition-all duration-150 border-l-2 ${cat.accent} group`}
               >
                 <div className="flex items-start justify-between gap-3">
                   <div className="flex-1 min-w-0">
@@ -404,12 +408,12 @@ export default function DashboardPage() {
       {/* Reply Detail Modal */}
       {selectedReply && (
         <div
-          className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/70 backdrop-blur-sm"
+          className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/70 backdrop-blur-sm animate-backdrop-in"
           onClick={(e) => e.target === e.currentTarget && setSelectedReply(null)}
         >
           <div
             ref={modalRef}
-            className="bg-bg-surface border border-border-subtle rounded-xl w-full max-w-3xl max-h-[90vh] overflow-y-auto shadow-2xl shadow-black/50"
+            className="bg-bg-surface border border-border-subtle rounded-xl w-full max-w-3xl max-h-[90vh] overflow-y-auto shadow-2xl shadow-black/50 animate-scale-in"
           >
             {/* Header */}
             <div className="flex items-center justify-between p-5 border-b border-border-subtle sticky top-0 bg-bg-surface/95 backdrop-blur-sm z-10 rounded-t-xl">

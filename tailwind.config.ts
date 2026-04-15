@@ -42,11 +42,31 @@ const config: Config = {
       },
       animation: {
         "dot-flow": "dotFlow 3s linear infinite",
+        "fade-in": "fadeIn 150ms ease-out",
+        "fade-up": "fadeUp 250ms ease-out both",
+        "scale-in": "scaleIn 200ms ease-out",
+        "backdrop-in": "backdropIn 200ms ease-out",
       },
       keyframes: {
         dotFlow: {
           "0%": { transform: "translateX(0)" },
           "100%": { transform: "translateX(100%)" },
+        },
+        fadeIn: {
+          "0%": { opacity: "0" },
+          "100%": { opacity: "1" },
+        },
+        fadeUp: {
+          "0%": { opacity: "0", transform: "translateY(6px)" },
+          "100%": { opacity: "1", transform: "translateY(0)" },
+        },
+        scaleIn: {
+          "0%": { opacity: "0", transform: "scale(0.96)" },
+          "100%": { opacity: "1", transform: "scale(1)" },
+        },
+        backdropIn: {
+          "0%": { opacity: "0" },
+          "100%": { opacity: "1" },
         },
       },
     },
