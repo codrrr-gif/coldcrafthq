@@ -14,6 +14,7 @@ import { processTimeoutAutoSends } from '@/lib/ai/auto-send';
 import { evaluateSilentOutcomes, tuneThresholds } from '@/lib/ai/outcomes';
 import { runDailySequence } from '@/lib/orchestrator/sequence-runner';
 import { processDueFollowups } from '@/lib/followups/scheduler';
+import { checkReplyWebhookStatus } from '@/lib/instantly-health';
 import { acquireCronLock, releaseCronLock } from '@/lib/cron-lock';
 import { requireSecret } from '@/lib/auth/api-auth';
 
@@ -31,7 +32,7 @@ export async function GET(req: NextRequest) {
   }
 
   try {
-    const [autoSendResult, silenceCount, thresholdResult, sequenceResult, followupResult] = await Promise.all([
+    const [autoSendResult, silenceCount, thresholdResult, sequenceResult, followupResult, webhookStatus] = await Promise.all([
       processTimeoutAutoSends().catch((err) => { console.error('[cron] auto-send failed:', err); return { processed: 0, sent: 0, failed: 0 }; }),
       evaluateSilentOutcomes().catch(() => 0),
       tuneThresholds().catch(() => ({ adjusted: 0 })),
@@ -42,6 +43,10 @@ export async function GET(req: NextRequest) {
       processDueFollowups().catch((err) => {
         console.error('[cron] Follow-up processing failed:', err);
         return { processed: 0, sent: 0, failed: 0 };
+      }),
+      checkReplyWebhookStatus().catch((err) => {
+        console.error('[cron] Webhook status check failed:', err);
+        return { found: false, status: null, reenabled: false };
       }),
     ]);
 
@@ -63,6 +68,7 @@ export async function GET(req: NextRequest) {
       },
       sequence: sequenceResult,
       followups: followupResult,
+      webhook: webhookStatus,
       timestamp: new Date().toISOString(),
     });
   } finally {

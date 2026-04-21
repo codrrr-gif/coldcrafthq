@@ -2,10 +2,12 @@
 // ============================================
 // Monitors sending account health across all Instantly accounts.
 // Checks bounce rates, reply rates, flags degraded accounts.
+// Also checks reply webhook status and auto-re-enables if disabled.
 // ============================================
 
 import { supabase } from '@/lib/supabase/client';
 import { listSendingAccounts, getCampaigns, pauseCampaign } from './instantly';
+import { notifySlack } from './slack';
 
 const BOUNCE_PAUSE_THRESHOLD = 0.02; // 2% — Google/Microsoft enforcement threshold
 
@@ -110,7 +112,7 @@ export async function checkAccountHealth(): Promise<{
     } catch {}
   }
 
-  // Auto-pause campaigns if workspace bounce rate > 3%
+  // Auto-pause campaigns if workspace bounce rate exceeds threshold
   const workspaceBounceRate = workspaceBounces / workspaceSends;
   let paused = 0;
   if (workspaceBounceRate > BOUNCE_PAUSE_THRESHOLD) {
@@ -123,8 +125,9 @@ export async function checkAccountHealth(): Promise<{
       }
       if (paused > 0) {
         const { notifySlack } = await import('./slack');
+        const thresholdPct = (BOUNCE_PAUSE_THRESHOLD * 100).toFixed(0);
         await notifySlack(
-          `🛑 Bounce rate ${(workspaceBounceRate * 100).toFixed(1)}% exceeds 3% — auto-paused ${paused} campaign(s). Investigate before resuming.`,
+          `🛑 Bounce rate ${(workspaceBounceRate * 100).toFixed(1)}% exceeds ${thresholdPct}% — auto-paused ${paused} campaign(s). Investigate before resuming.`,
           'error'
         );
       }
@@ -134,4 +137,76 @@ export async function checkAccountHealth(): Promise<{
   }
 
   return { accounts: accounts.length, flagged: flaggedAccounts.length, paused, results };
+}
+
+// ============================================
+// Reply webhook status check
+// ============================================
+// Instantly auto-disables webhooks after repeated failed deliveries.
+// This probes the reply webhook, attempts to re-enable if disabled,
+// and alerts Slack so we know it happened.
+
+interface InstantlyWebhook {
+  id: string;
+  event_type: string;
+  target_hook_url: string;
+  status: number; // 1 = active, -1 = disabled
+  timestamp_error?: string;
+}
+
+async function instantlyApi<T>(path: string, init: RequestInit = {}): Promise<T | null> {
+  const apiKey = process.env.INSTANTLY_API_KEY;
+  if (!apiKey) return null;
+  try {
+    const res = await fetch(`https://api.instantly.ai/api/v2${path}`, {
+      ...init,
+      headers: {
+        'Authorization': `Bearer ${apiKey}`,
+        'Content-Type': 'application/json',
+        ...(init.headers || {}),
+      },
+      signal: AbortSignal.timeout(10000),
+    });
+    if (!res.ok) {
+      console.error(`[instantly-health] ${path} -> ${res.status}`);
+      return null;
+    }
+    return (await res.json()) as T;
+  } catch (err) {
+    console.error(`[instantly-health] ${path} failed:`, err);
+    return null;
+  }
+}
+
+export async function checkReplyWebhookStatus(): Promise<{
+  found: boolean;
+  status: number | null;
+  reenabled: boolean;
+}> {
+  const list = await instantlyApi<{ items: InstantlyWebhook[] }>('/webhooks');
+  if (!list?.items) return { found: false, status: null, reenabled: false };
+
+  // The reply webhook is the one subscribed to all_events, not bounce-only
+  const hook = list.items.find((h) => h.event_type === 'all_events');
+  if (!hook) return { found: false, status: null, reenabled: false };
+
+  if (hook.status === 1) {
+    return { found: true, status: 1, reenabled: false };
+  }
+
+  // Disabled — try to re-enable
+  const patched = await instantlyApi<InstantlyWebhook>(`/webhooks/${hook.id}`, {
+    method: 'PATCH',
+    body: JSON.stringify({ status: 1 }),
+  });
+  const reenabled = patched?.status === 1;
+
+  notifySlack(
+    reenabled
+      ? `♻️ Instantly reply webhook was disabled (last error ${hook.timestamp_error || 'unknown'}) — auto re-enabled.`
+      : `🚨 Instantly reply webhook is DISABLED (last error ${hook.timestamp_error || 'unknown'}) and auto re-enable failed. Check https://app.instantly.ai/app/settings/integrations`,
+    reenabled ? 'warning' : 'error'
+  ).catch(() => {});
+
+  return { found: true, status: hook.status, reenabled };
 }

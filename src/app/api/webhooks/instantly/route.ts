@@ -3,20 +3,19 @@
 // ============================================
 // Every reply flows through here. This is the brain stem.
 //
-// Flow:
-// 1. Validate webhook
-// 2. Fetch full thread from Instantly
-// 3. AI categorizes with sub-categories + confidence
-// 4. Route based on category:
-//    - Interested → Deep research + AI draft + auto-send check
-//    - Soft No → AI draft + auto-send check
-//    - Hard No → Auto-tag, delete, blocklist (no human needed)
-//    - Custom → Handle per sub-category
-// 5. Auto-send if confidence is high enough
-// 6. Slack notify based on urgency
-// 7. Store everything in dashboard
+// Fast path (returns 200 in <1s):
+//   auth → dedup → insert minimal row → waitUntil(processReplyAsync)
+//
+// Background (processReplyAsync):
+//   fetch thread → categorize → route by category → draft →
+//   auto-send check → activity/CRM/Slack/pipeline → UPDATE row
+//
+// Why ack-fast: Instantly's webhook timeout is ~10s. Our drafting path
+// routinely runs 15–25s (Perplexity + Claude). Blocking on it causes
+// Instantly to count failures and auto-disable the webhook.
 
 import { NextRequest, NextResponse } from 'next/server';
+import { waitUntil } from '@vercel/functions';
 import { supabase } from '@/lib/supabase/client';
 import { getThread, tagLead, deleteLead, blockEmail } from '@/lib/instantly';
 import { categorizeReply } from '@/lib/ai/categorize';
@@ -38,6 +37,9 @@ import { scheduleFollowUp } from '@/lib/followups/scheduler';
 import { extractReferral, processReferral } from '@/lib/referrals/extract';
 import type { ThreadMessage } from '@/lib/types';
 import type { SubCategory } from '@/lib/ai/playbooks';
+
+export const dynamic = 'force-dynamic';
+export const maxDuration = 60;
 
 // Signal campaign IDs from env — anything else is a list campaign
 function isSignalCampaign(campaignId: string | null): boolean {
@@ -125,65 +127,7 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ success: true, id: recentReply[0].id, deduplicated: true, reason: 'cooldown' });
     }
 
-    // Record reply as a valid signal — non-blocking, best data point we can get
-    recordEmailOutcome(lead_email, 'replied', {
-      campaign_id: campaign_id || undefined,
-      source: 'instantly',
-    }).catch(console.error);
-
-    // Step 1: Fetch full thread from Instantly
-    let threadHistory: ThreadMessage[] = [];
-    try {
-      if (campaign_id) {
-        threadHistory = await getThread(campaign_id, lead_email);
-      }
-    } catch (err) {
-      console.error('Failed to fetch thread:', err);
-    }
-
-    // Pre-AI OOO detection — skip expensive AI call for obvious auto-replies
-    const detectedOoo = isObviousOoo(reply_text);
-
-    // Step 2: AI categorizes with chain-of-thought reasoning (skip for obvious OOO)
-    const categorization = detectedOoo
-      ? { category: 'custom' as const, sub_category: 'custom.ooo' as const, confidence: 0.95, tone: 'neutral' as const, urgency: 'low' as const, prospect_name: null, prospect_company: null, summary: 'Out of office auto-reply' }
-      : await categorizeReply(reply_text, threadHistory);
-    const {
-      category,
-      sub_category: subCategory,
-      confidence,
-      tone,
-      urgency,
-    } = categorization;
-
-    // Use AI-extracted names if payload didn't have them
-    const leadName = payloadLeadName || categorization.prospect_name;
-    const leadCompany = payloadCompany || categorization.prospect_company;
-
-    // Step 2.5: Chain detection — is this a follow-up to a reply we already sent?
-    let parentReplyId: string | null = null;
-    try {
-      const { data: parentReply } = await supabase
-        .from('replies')
-        .select('id')
-        .eq('lead_email', lead_email)
-        .eq('status', 'sent')
-        .is('outcome', null)
-        .order('created_at', { ascending: false })
-        .limit(1);
-
-      if (parentReply?.length) {
-        const pid = parentReply[0].id as string;
-        parentReplyId = pid;
-        // Score the parent reply's outcome based on this follow-up (non-blocking)
-        const outcome = determineOutcome(category);
-        scoreReplyOutcome(pid, '', outcome, reply_text).catch(console.error);
-      }
-    } catch (err) {
-      console.error('Chain detection failed:', err);
-    }
-
-    // Resolve client_id early — needed for knowledge base filtering in draftReply
+    // Resolve client_id early — used by processReplyAsync for knowledge filtering
     let clientId = '00000000-0000-0000-0000-000000000001';
     try {
       const { data: pl } = await supabase
@@ -196,167 +140,24 @@ export async function POST(req: NextRequest) {
       if (pl?.client_id) clientId = pl.client_id;
     } catch {}
 
-    // Step 3: Route based on category
-    let aiReply = '';
-    let research = null;
-    let knowledgeUsed = '';
-    let frameworkUsed = '';
-    let aiReasoning = '';
-    let alternativeReply: string | null = null;
-    let replyConfidence = 0;
-    let status = 'pending';
-    let autoSent = false;
-    let autoSendReason: string | null = null;
-
-    if (category === 'hard_no') {
-      // === HARD NO: Auto-handle immediately ===
-      // Must remove from campaign + blocklist to protect sender reputation
-      try {
-        // Delete from campaign FIRST — this is the critical action
-        let deleteCampaignId = campaign_id;
-        if (!deleteCampaignId) {
-          const { data: pl } = await supabase
-            .from('pipeline_leads')
-            .select('instantly_campaign_id')
-            .eq('email', lead_email)
-            .not('instantly_campaign_id', 'is', null)
-            .limit(1)
-            .maybeSingle();
-          deleteCampaignId = pl?.instantly_campaign_id || null;
-        }
-
-        if (deleteCampaignId) {
-          await deleteLead(deleteCampaignId, lead_email);
-        }
-        status = 'skipped';
-
-        // Tag and block are best-effort — don't let failures prevent deletion
-        tagLead(lead_email, 'HARD NO').catch((err) =>
-          console.warn('[webhook] tagLead failed (non-blocking):', err)
-        );
-        blockEmail(lead_email).catch((err) =>
-          console.warn('[webhook] blockEmail failed (non-blocking):', err)
-        );
-
-        // Alert on legal threats
-        if (subCategory === 'hard_no.legal_threat') {
-          await notifyLegalThreat(lead_email, reply_text);
-        }
-      } catch (err) {
-        console.error('Failed to delete lead (hard no):', err);
-        status = 'pending'; // Fall back to human review only if delete fails
-      }
-    } else if (category === 'interested' || category === 'soft_no' || category === 'custom') {
-      // === OOO: Handle based on campaign type ===
-      // List campaigns: stop_on_auto_reply already pauses the sequence — don't delete
-      // Signal campaigns: delete from campaign (time-sensitive, no point keeping)
-      if (subCategory === 'custom.ooo') {
-        try {
-          if (isSignalCampaign(campaign_id)) {
-            let deleteCampaignId = campaign_id;
-            if (!deleteCampaignId) {
-              const { data: pl } = await supabase
-                .from('pipeline_leads')
-                .select('instantly_campaign_id')
-                .eq('email', lead_email)
-                .not('instantly_campaign_id', 'is', null)
-                .limit(1)
-                .maybeSingle();
-              deleteCampaignId = pl?.instantly_campaign_id || null;
-            }
-            if (deleteCampaignId) {
-              await deleteLead(deleteCampaignId, lead_email);
-            }
-            status = 'skipped';
-          } else {
-            // List campaign — let stop_on_auto_reply handle the pause
-            status = 'skipped';
-          }
-          tagLead(lead_email, 'OOO').catch((err) =>
-            console.warn('[webhook] OOO tagLead failed (non-blocking):', err)
-          );
-        } catch (err) {
-          console.error('Failed to handle OOO:', err);
-        }
-      }
-
-      // === Tag the lead in Instantly (best-effort) ===
-      const tagMap: Record<string, string> = {
-        interested: 'Interested',
-        soft_no: 'SOFT NO',
-        custom: 'Custom',
-      };
-      if (subCategory !== 'custom.ooo') {
-        tagLead(lead_email, tagMap[category] || 'Custom').catch((err) =>
-          console.warn('[webhook] tagLead failed (non-blocking):', err)
-        );
-      }
-
-      // === Draft reply using playbook + research + knowledge ===
-      // Skip drafting for OOO — no point replying to an auto-reply
-      if (subCategory !== 'custom.ooo') {
-        try {
-          const draftResult = await draftReply(
-            subCategory as SubCategory,
-            reply_text,
-            threadHistory,
-            lead_email,
-            leadName || null,
-            leadCompany || null,
-            clientId
-          );
-
-          aiReply = draftResult.reply;
-          replyConfidence = draftResult.confidence;
-          frameworkUsed = draftResult.framework_used;
-          knowledgeUsed = draftResult.knowledge_used.join(', ');
-          aiReasoning = draftResult.reasoning;
-          alternativeReply = draftResult.alternative_reply;
-          research = draftResult.research;
-        } catch (err) {
-          console.error('Failed to draft reply:', err);
-        }
-      }
-    }
-
-    // Step 4: Store in database
-    const responseTime = Date.now() - startTime;
-
+    // Insert a minimal placeholder row so we can ack in <1s.
+    // The background processor UPDATEs this row with category/draft/etc.
+    // category='custom' + status='pending' is a safe fallback if bg work crashes.
     const { data: replyRecord, error: insertError } = await supabase
       .from('replies')
       .insert({
         instantly_lead_id: lead_id || null,
         instantly_campaign_id: campaign_id || null,
         lead_email,
-        lead_name: leadName || null,
-        lead_company: leadCompany || null,
-        category,
-        sub_category: subCategory,
+        lead_name: payloadLeadName || null,
+        lead_company: payloadCompany || null,
+        category: 'custom',
+        sub_category: null,
         original_message: reply_text,
-        thread_history: threadHistory,
-        ai_reply: aiReply || null,
-        final_reply: aiReply || null,
-        confidence: replyConfidence,
-        status,
-        research: research?.raw_research || null,
-        research_data: research ? {
-          company_overview: research.company_overview,
-          pain_signals: research.pain_signals,
-          opportunity_signals: research.opportunity_signals,
-          connection_points: research.connection_points,
-        } : null,
-        knowledge_used: knowledgeUsed || null,
-        framework_used: frameworkUsed || null,
-        ai_reasoning: aiReasoning || null,
-        alternative_reply: alternativeReply,
-        tone,
-        urgency,
-        response_time_ms: responseTime,
-        auto_sent: false,
-        auto_send_reason: null,
-        parent_reply_id: parentReplyId,
+        status: 'pending',
         message_hash: messageHash,
         client_id: clientId,
+        auto_sent: false,
       })
       .select('id')
       .single();
@@ -371,182 +172,35 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'Failed to store reply' }, { status: 500 });
     }
 
-    // Wire activity feed
-    if (clientId !== '00000000-0000-0000-0000-000000000001') {
-      insertActivity(clientId, 'reply_received', `Reply from ${leadName || lead_email} — ${category}`, reply_text?.substring(0, 150)).catch(() => {});
-    }
+    // Record reply as a valid signal — non-blocking
+    recordEmailOutcome(lead_email, 'replied', {
+      campaign_id: campaign_id || undefined,
+      source: 'instantly',
+    }).catch(console.error);
 
-    // Link the outcome_reply_id on the parent now that we have the new reply's ID
-    if (parentReplyId && replyRecord) {
-      try {
-        await supabase
-          .from('replies')
-          .update({ outcome_reply_id: replyRecord.id })
-          .eq('id', parentReplyId);
-      } catch (err) {
-        console.error('Failed to link outcome_reply_id:', err);
-      }
-    }
-
-    // Step 5: Auto-send check
-    if (status === 'pending' && aiReply && replyRecord) {
-      const autoSendDecision = await shouldAutoSend(
-        subCategory as SubCategory,
-        replyConfidence,
-        aiReply
-      );
-
-      if (autoSendDecision.should_auto_send) {
-        const sent = await executeAutoSend(replyRecord.id, 'high_confidence');
-        if (sent) {
-          autoSent = true;
-          autoSendReason = 'high_confidence';
-          status = 'sent';
-        }
-      }
-    }
-
-    // Step 5.5: Schedule follow-up if playbook defines one
-    if (replyRecord && subCategory) {
-      try {
-        const playbook = getPlaybook(subCategory as SubCategory);
-        if (playbook.follow_up_action && !playbook.follow_up_action.startsWith('blocklist')) {
-          scheduleFollowUp({
-            leadEmail: lead_email,
-            leadId: lead_id || null,
-            replyId: replyRecord.id,
-            action: playbook.follow_up_action,
-            campaignId: campaign_id || null,
-            oooReturnDate: subCategory === 'custom.ooo' ? extractOooDate(reply_text) : null,
-          }).catch(console.error);
-        }
-      } catch (err) {
-        console.error('[webhook] Follow-up scheduling failed:', err);
-      }
-    }
-
-    // Step 5.6: Auto-process referrals — extract referred person, push to pipeline
-    // Runs on explicit referral categories AND any reply with referral language,
-    // because the AI categorizer often classifies "talk to Sarah instead" as soft_no
-    const hasEmailInReply = /[\w.+-]+@[\w-]+\.[\w.-]+/.test(reply_text || '');
-    const hasReferralLanguage = /(?:talk to|reach out to|contact|speak with|connect with|forward(?:ed|ing)?|handles?|manages?|right person|better person|you should (?:email|call)|instead.{0,30}@|point(?:ed|ing)?\s+(?:you|me))/i.test(reply_text || '');
-    const shouldCheckReferral = subCategory === 'interested.referral' ||
-      subCategory === 'custom.forwarded' ||
-      (subCategory === 'custom.ooo' && hasEmailInReply) ||
-      (hasReferralLanguage && hasEmailInReply);
-    if (shouldCheckReferral) {
-      try {
-        const referral = extractReferral(reply_text, leadCompany || null);
-        if (referral) {
-          // Look up original lead for context
-          const { data: sourceLead } = await supabase
-            .from('pipeline_leads')
-            .select('signal_type, company_domain, personalized_opener')
-            .eq('email', lead_email)
-            .limit(1)
-            .maybeSingle();
-
-          processReferral({
-            referral,
-            sourceLeadEmail: lead_email,
-            sourceReplyId: replyRecord?.id || '',
-            signalType: sourceLead?.signal_type || null,
-            companyDomain: sourceLead?.company_domain || null,
-            personalizedOpener: null,
-            sourceCampaignId: campaign_id || null,
-          }).catch(console.error); // fire-and-forget
-        }
-      } catch (err) {
-        console.error('[webhook] Referral extraction failed:', err);
-      }
-    }
-
-    // Update pipeline_leads status — this feeds the learning/ICP-learner modules
-    try {
-      if (category === 'interested') {
-        await supabase
-          .from('pipeline_leads')
-          .update({ status: 'replied', updated_at: new Date().toISOString() })
-          .eq('email', lead_email)
-          .in('status', ['pushed', 'contacted']);
-      } else if (category === 'hard_no') {
-        await supabase
-          .from('pipeline_leads')
-          .update({ status: 'opted_out', updated_at: new Date().toISOString() })
-          .eq('email', lead_email)
-          .in('status', ['pushed', 'contacted']);
-      } else if (category === 'soft_no' || category === 'custom') {
-        await supabase
-          .from('pipeline_leads')
-          .update({ status: 'replied', updated_at: new Date().toISOString() })
-          .eq('email', lead_email)
-          .in('status', ['pushed', 'contacted']);
-      }
-    } catch (err) {
-      console.error('[webhook] Failed to update pipeline_leads status:', err);
-    }
-
-    // Signal performance feedback loop — track which signals produce replies
-    recordReplyFeedback(lead_email, category).catch(console.error);
-
-    // Sync interested reply to Close CRM (fire-and-forget)
-    if (category === 'interested') {
-      markInterestedInCrm({
-        email: lead_email,
-        company: leadCompany,
-        lead_name: leadName,
-        reply_summary: categorization.summary,
-      }).catch(console.error);
-    }
-
-    // Log inbound reply to Close timeline
-    logActivityToClose({
-      type: 'email_replied',
-      leadEmail: lead_email,
-      subject: 'Re: ColdCraft Outbound',
-      body: reply_text?.substring(0, 500) || '',
-      direction: 'incoming',
-    }).catch(() => {});
-
-    // Step 6: Slack notifications
-    if (category === 'interested') {
-      await notifyHotLead(
-        lead_email,
-        leadName || null,
-        leadCompany || null,
-        categorization.summary,
-        confidence,
-        autoSent
-      );
-    } else if (status === 'pending' && aiReply) {
-      await notifyReviewNeeded(
-        lead_email,
-        leadName || null,
-        leadCompany || null,
-        category,
-        subCategory,
-        replyConfidence,
-        categorization.summary
-      );
-    }
-
-    // Duplicate classification path removed — was burning 4x Claude API calls per reply
-    // with a separate taxonomy (7 categories vs 17 sub-categories) that was never used.
+    // Run the heavy work in the background. Vercel keeps the function
+    // alive until this promise resolves, up to maxDuration (60s).
+    waitUntil(
+      processReplyAsync({
+        replyId: replyRecord!.id,
+        leadEmail: lead_email,
+        leadId: lead_id,
+        campaignId: campaign_id,
+        replyText: reply_text,
+        payloadLeadName,
+        payloadCompany,
+        clientId,
+        startTime,
+      }).catch((err) => {
+        console.error('[webhook] processReplyAsync crashed:', err);
+      })
+    );
 
     return NextResponse.json({
       success: true,
-      id: replyRecord?.id,
-      category,
-      sub_category: subCategory,
-      confidence,
-      reply_confidence: replyConfidence,
-      status,
-      auto_sent: autoSent,
-      auto_send_reason: autoSendReason,
-      has_draft: !!aiReply,
-      has_alternative: !!alternativeReply,
-      framework_used: frameworkUsed,
-      response_time_ms: responseTime,
+      id: replyRecord!.id,
+      status: 'processing',
+      response_time_ms: Date.now() - startTime,
     });
   } catch (err) {
     console.error('Webhook processing error:', err);
@@ -554,28 +208,407 @@ export async function POST(req: NextRequest) {
   }
 }
 
+// ============================================
+// Background processor
+// ============================================
+interface ProcessReplyCtx {
+  replyId: string;
+  leadEmail: string;
+  leadId: string | null;
+  campaignId: string | null;
+  replyText: string;
+  payloadLeadName: string | null;
+  payloadCompany: string | null;
+  clientId: string;
+  startTime: number;
+}
+
+async function processReplyAsync(ctx: ProcessReplyCtx): Promise<void> {
+  const {
+    replyId, leadEmail, leadId, campaignId, replyText,
+    payloadLeadName, payloadCompany, clientId, startTime,
+  } = ctx;
+
+  // Step 1: Fetch full thread from Instantly
+  let threadHistory: ThreadMessage[] = [];
+  try {
+    if (campaignId) threadHistory = await getThread(campaignId, leadEmail);
+  } catch (err) {
+    console.error('[processReply] Failed to fetch thread:', err);
+  }
+
+  // Pre-AI OOO detection — skip expensive AI call for obvious auto-replies
+  const detectedOoo = isObviousOoo(replyText);
+
+  // Step 2: AI categorizes (skip for obvious OOO)
+  const categorization = detectedOoo
+    ? { category: 'custom' as const, sub_category: 'custom.ooo' as const, confidence: 0.95, tone: 'neutral' as const, urgency: 'low' as const, prospect_name: null, prospect_company: null, summary: 'Out of office auto-reply' }
+    : await categorizeReply(replyText, threadHistory);
+  const {
+    category,
+    sub_category: subCategory,
+    confidence,
+    tone,
+    urgency,
+  } = categorization;
+
+  const leadName = payloadLeadName || categorization.prospect_name;
+  const leadCompany = payloadCompany || categorization.prospect_company;
+
+  // Step 2.5: Chain detection — is this a follow-up to a reply we already sent?
+  let parentReplyId: string | null = null;
+  try {
+    const { data: parentReply } = await supabase
+      .from('replies')
+      .select('id')
+      .eq('lead_email', leadEmail)
+      .eq('status', 'sent')
+      .is('outcome', null)
+      .neq('id', replyId)
+      .order('created_at', { ascending: false })
+      .limit(1);
+
+    if (parentReply?.length) {
+      const pid = parentReply[0].id as string;
+      parentReplyId = pid;
+      const outcome = determineOutcome(category);
+      scoreReplyOutcome(pid, '', outcome, replyText).catch(console.error);
+    }
+  } catch (err) {
+    console.error('[processReply] Chain detection failed:', err);
+  }
+
+  // Step 3: Route based on category
+  let aiReply = '';
+  let research = null;
+  let knowledgeUsed = '';
+  let frameworkUsed = '';
+  let aiReasoning = '';
+  let alternativeReply: string | null = null;
+  let replyConfidence = 0;
+  let status: 'pending' | 'sent' | 'skipped' | 'approved' | 'failed' = 'pending';
+
+  if (category === 'hard_no') {
+    // === HARD NO: Auto-handle immediately ===
+    try {
+      let deleteCampaignId = campaignId;
+      if (!deleteCampaignId) {
+        const { data: pl } = await supabase
+          .from('pipeline_leads')
+          .select('instantly_campaign_id')
+          .eq('email', leadEmail)
+          .not('instantly_campaign_id', 'is', null)
+          .limit(1)
+          .maybeSingle();
+        deleteCampaignId = pl?.instantly_campaign_id || null;
+      }
+
+      if (deleteCampaignId) {
+        await deleteLead(deleteCampaignId, leadEmail);
+      }
+      status = 'skipped';
+
+      tagLead(leadEmail, 'HARD NO').catch((err) =>
+        console.warn('[processReply] tagLead failed (non-blocking):', err)
+      );
+      blockEmail(leadEmail).catch((err) =>
+        console.warn('[processReply] blockEmail failed (non-blocking):', err)
+      );
+
+      if (subCategory === 'hard_no.legal_threat') {
+        await notifyLegalThreat(leadEmail, replyText);
+      }
+    } catch (err) {
+      console.error('[processReply] Failed to delete lead (hard no):', err);
+      status = 'pending'; // Fall back to human review only if delete fails
+    }
+  } else if (category === 'interested' || category === 'soft_no' || category === 'custom') {
+    // === OOO: Handle based on campaign type ===
+    if (subCategory === 'custom.ooo') {
+      try {
+        if (isSignalCampaign(campaignId)) {
+          let deleteCampaignId = campaignId;
+          if (!deleteCampaignId) {
+            const { data: pl } = await supabase
+              .from('pipeline_leads')
+              .select('instantly_campaign_id')
+              .eq('email', leadEmail)
+              .not('instantly_campaign_id', 'is', null)
+              .limit(1)
+              .maybeSingle();
+            deleteCampaignId = pl?.instantly_campaign_id || null;
+          }
+          if (deleteCampaignId) {
+            await deleteLead(deleteCampaignId, leadEmail);
+          }
+          status = 'skipped';
+        } else {
+          // List campaign — let stop_on_auto_reply handle the pause
+          status = 'skipped';
+        }
+        tagLead(leadEmail, 'OOO').catch((err) =>
+          console.warn('[processReply] OOO tagLead failed (non-blocking):', err)
+        );
+      } catch (err) {
+        console.error('[processReply] Failed to handle OOO:', err);
+      }
+    }
+
+    // === Tag the lead in Instantly (best-effort) ===
+    const tagMap: Record<string, string> = {
+      interested: 'Interested',
+      soft_no: 'SOFT NO',
+      custom: 'Custom',
+    };
+    if (subCategory !== 'custom.ooo') {
+      tagLead(leadEmail, tagMap[category] || 'Custom').catch((err) =>
+        console.warn('[processReply] tagLead failed (non-blocking):', err)
+      );
+    }
+
+    // === Draft reply using playbook + research + knowledge ===
+    if (subCategory !== 'custom.ooo') {
+      try {
+        const draftResult = await draftReply(
+          subCategory as SubCategory,
+          replyText,
+          threadHistory,
+          leadEmail,
+          leadName || null,
+          leadCompany || null,
+          clientId
+        );
+
+        aiReply = draftResult.reply;
+        replyConfidence = draftResult.confidence;
+        frameworkUsed = draftResult.framework_used;
+        knowledgeUsed = draftResult.knowledge_used.join(', ');
+        aiReasoning = draftResult.reasoning;
+        alternativeReply = draftResult.alternative_reply;
+        research = draftResult.research;
+      } catch (err) {
+        console.error('[processReply] Failed to draft reply:', err);
+      }
+    }
+  }
+
+  // Step 4: UPDATE the placeholder row with enriched data
+  const responseTime = Date.now() - startTime;
+
+  const { error: updateError } = await supabase
+    .from('replies')
+    .update({
+      lead_name: leadName || null,
+      lead_company: leadCompany || null,
+      category,
+      sub_category: subCategory,
+      thread_history: threadHistory,
+      ai_reply: aiReply || null,
+      final_reply: aiReply || null,
+      confidence: replyConfidence,
+      status,
+      research: research?.raw_research || null,
+      research_data: research ? {
+        company_overview: research.company_overview,
+        pain_signals: research.pain_signals,
+        opportunity_signals: research.opportunity_signals,
+        connection_points: research.connection_points,
+      } : null,
+      knowledge_used: knowledgeUsed || null,
+      framework_used: frameworkUsed || null,
+      ai_reasoning: aiReasoning || null,
+      alternative_reply: alternativeReply,
+      tone,
+      urgency,
+      response_time_ms: responseTime,
+      parent_reply_id: parentReplyId,
+      updated_at: new Date().toISOString(),
+    })
+    .eq('id', replyId);
+
+  if (updateError) {
+    console.error('[processReply] Failed to update reply:', updateError);
+    return;
+  }
+
+  // Wire activity feed
+  if (clientId !== '00000000-0000-0000-0000-000000000001') {
+    insertActivity(
+      clientId,
+      'reply_received',
+      `Reply from ${leadName || leadEmail} — ${category}`,
+      replyText?.substring(0, 150)
+    ).catch(() => {});
+  }
+
+  // Link outcome_reply_id on parent
+  if (parentReplyId) {
+    try {
+      await supabase
+        .from('replies')
+        .update({ outcome_reply_id: replyId })
+        .eq('id', parentReplyId);
+    } catch (err) {
+      console.error('[processReply] Failed to link outcome_reply_id:', err);
+    }
+  }
+
+  // Step 5: Auto-send check
+  let autoSent = false;
+  if (status === 'pending' && aiReply) {
+    const autoSendDecision = await shouldAutoSend(
+      subCategory as SubCategory,
+      replyConfidence,
+      aiReply
+    );
+
+    if (autoSendDecision.should_auto_send) {
+      const sent = await executeAutoSend(replyId, 'high_confidence');
+      if (sent) {
+        autoSent = true;
+        status = 'sent';
+      }
+    }
+  }
+
+  // Step 5.5: Schedule follow-up if playbook defines one
+  if (subCategory) {
+    try {
+      const playbook = getPlaybook(subCategory as SubCategory);
+      if (playbook.follow_up_action && !playbook.follow_up_action.startsWith('blocklist')) {
+        scheduleFollowUp({
+          leadEmail,
+          leadId: leadId || null,
+          replyId,
+          action: playbook.follow_up_action,
+          campaignId: campaignId || null,
+          oooReturnDate: subCategory === 'custom.ooo' ? extractOooDate(replyText) : null,
+        }).catch(console.error);
+      }
+    } catch (err) {
+      console.error('[processReply] Follow-up scheduling failed:', err);
+    }
+  }
+
+  // Step 5.6: Auto-process referrals
+  const hasEmailInReply = /[\w.+-]+@[\w-]+\.[\w.-]+/.test(replyText || '');
+  const hasReferralLanguage = /(?:talk to|reach out to|contact|speak with|connect with|forward(?:ed|ing)?|handles?|manages?|right person|better person|you should (?:email|call)|instead.{0,30}@|point(?:ed|ing)?\s+(?:you|me))/i.test(replyText || '');
+  const shouldCheckReferral = subCategory === 'interested.referral' ||
+    subCategory === 'custom.forwarded' ||
+    (subCategory === 'custom.ooo' && hasEmailInReply) ||
+    (hasReferralLanguage && hasEmailInReply);
+  if (shouldCheckReferral) {
+    try {
+      const referral = extractReferral(replyText, leadCompany || null);
+      if (referral) {
+        const { data: sourceLead } = await supabase
+          .from('pipeline_leads')
+          .select('signal_type, company_domain, personalized_opener')
+          .eq('email', leadEmail)
+          .limit(1)
+          .maybeSingle();
+
+        processReferral({
+          referral,
+          sourceLeadEmail: leadEmail,
+          sourceReplyId: replyId,
+          signalType: sourceLead?.signal_type || null,
+          companyDomain: sourceLead?.company_domain || null,
+          personalizedOpener: null,
+          sourceCampaignId: campaignId || null,
+        }).catch(console.error);
+      }
+    } catch (err) {
+      console.error('[processReply] Referral extraction failed:', err);
+    }
+  }
+
+  // Update pipeline_leads status — feeds learning/ICP-learner modules
+  try {
+    if (category === 'interested') {
+      await supabase
+        .from('pipeline_leads')
+        .update({ status: 'replied', updated_at: new Date().toISOString() })
+        .eq('email', leadEmail)
+        .in('status', ['pushed', 'contacted']);
+    } else if (category === 'hard_no') {
+      await supabase
+        .from('pipeline_leads')
+        .update({ status: 'opted_out', updated_at: new Date().toISOString() })
+        .eq('email', leadEmail)
+        .in('status', ['pushed', 'contacted']);
+    } else if (category === 'soft_no' || category === 'custom') {
+      await supabase
+        .from('pipeline_leads')
+        .update({ status: 'replied', updated_at: new Date().toISOString() })
+        .eq('email', leadEmail)
+        .in('status', ['pushed', 'contacted']);
+    }
+  } catch (err) {
+    console.error('[processReply] Failed to update pipeline_leads status:', err);
+  }
+
+  // Signal performance feedback loop
+  recordReplyFeedback(leadEmail, category).catch(console.error);
+
+  // Sync interested reply to Close CRM (fire-and-forget)
+  if (category === 'interested') {
+    markInterestedInCrm({
+      email: leadEmail,
+      company: leadCompany,
+      lead_name: leadName,
+      reply_summary: categorization.summary,
+    }).catch(console.error);
+  }
+
+  // Log inbound reply to Close timeline
+  logActivityToClose({
+    type: 'email_replied',
+    leadEmail,
+    subject: 'Re: ColdCraft Outbound',
+    body: replyText?.substring(0, 500) || '',
+    direction: 'incoming',
+  }).catch(() => {});
+
+  // Step 6: Slack notifications
+  if (category === 'interested') {
+    await notifyHotLead(
+      leadEmail,
+      leadName || null,
+      leadCompany || null,
+      categorization.summary,
+      confidence,
+      autoSent
+    );
+  } else if (status === 'pending' && aiReply) {
+    await notifyReviewNeeded(
+      leadEmail,
+      leadName || null,
+      leadCompany || null,
+      category,
+      subCategory,
+      replyConfidence,
+      categorization.summary
+    );
+  }
+}
+
 /** Try to extract a return date from OOO auto-replies */
 function extractOooDate(text: string): string | null {
   const patterns = [
-    // "back on March 15", "returning Jan 5, 2026"
     /(?:back|return(?:ing)?|available)\s+(?:on\s+)?(\w+ \d{1,2}(?:,?\s*\d{4})?)/i,
-    // "back on 3/15", "return 4/6/2026"
     /(?:back|return(?:ing)?|available)\s+(?:on\s+)?(\d{1,2}\/\d{1,2}(?:\/\d{2,4})?)/i,
-    // "away until March 15", "out until June 1", "until 4/6"
     /(?:until|through|till)\s+(\w+ \d{1,2}(?:,?\s*\d{4})?)/i,
     /(?:until|through|till)\s+(\d{1,2}\/\d{1,2}(?:\/\d{2,4})?)/i,
-    // "away until June" (month only — assume 1st of that month)
     /(?:until|through|till)\s+(January|February|March|April|May|June|July|August|September|October|November|December)/i,
   ];
   for (const pattern of patterns) {
     const match = text.match(pattern);
     if (match) {
       let dateStr = match[1];
-      // Month-only: append "1" so Date can parse it (e.g. "June" → "June 1")
       if (/^[A-Z][a-z]+$/.test(dateStr)) dateStr = `${dateStr} 1`;
       const parsed = new Date(dateStr);
       if (!isNaN(parsed.getTime())) {
-        // If parsed date is in the past (no year given), set to current/next year
         const now = new Date();
         if (parsed < now) {
           parsed.setFullYear(now.getFullYear());
@@ -593,8 +626,9 @@ export async function GET() {
   return NextResponse.json({
     status: 'ok',
     service: 'coldcraft-reply-engine',
-    version: '3.0',
+    version: '3.1',
     features: [
+      'ack-fast-waitUntil',
       'granular-categorization',
       'playbook-driven-replies',
       'confidence-auto-send',
