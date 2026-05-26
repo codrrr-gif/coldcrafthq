@@ -1,0 +1,229 @@
+{
+  "CC-List-RetainedRecruiters-A": {
+    "niche_default": "executive search",
+    "tier": "A",
+    "rules": ["zero em dashes", "zero exclamations", "spintax", "vars: firstName/companyName/industryNiche/senderFirst"],
+    "steps": [
+      {
+        "delay": 0,
+        "variants": [
+          {
+            "subject": "{quick question about {{companyName}}|{{firstName}}, retained-search pipeline thought|thought about {{companyName}}}",
+            "body": "{Hey|Hi} {{firstName}},\n\n{Ran across|Noticed|Came across} {{companyName}} {and the work you're doing in {{industryNiche}}|in the executive search space}.\n\n{Quick question|Curious} - how much of {{companyName}}'s pipeline is {referrals vs. a repeatable system|dependent on your existing network}?\n\nMost retained search firms I talk to are {sitting around 80-90% referral-dependent|almost entirely relationship-driven}. {Works great until a slow quarter hits and there's nothing behind it.|Fine until two clients pause hiring at the same time.}\n\nI {build|run} cold email systems specifically for retained search firms that {put qualified search opportunities in front of you every week|surface companies actively scaling and likely to need senior placements}.\n\n{How is {{companyName}} handling new client acquisition right now?|What does {{companyName}}'s pipeline look like outside of referrals?|Is filling the search pipeline something {{companyName}} is actively working on?}\n\n{{senderFirst}}"
+          },
+          {
+            "subject": "{free search-pipeline audit for {{companyName}}|{{firstName}}, quick idea|{{companyName}}'s outbound opportunity}",
+            "body": "{Hey|Hi} {{firstName}},\n\n{Spent time on|Looked into|Researched} the executive search space and {{companyName}} caught my eye.\n\nI put together free pipeline audits for retained search firms - {mapping out how many qualified companies in your market are actively scaling and likely to need senior placements|showing the outbound opportunity specific to a firm like {{companyName}}}.\n\n{Takes me about 30 minutes and it's yours whether we work together or not.|Free, no strings. Yours regardless.}\n\n{Want me to build one for {{companyName}}?|I can put together a quick pipeline snapshot for {{companyName}} - happy to share what I find if it's useful.|If it would be helpful, I can show you exactly what the prospect pool looks like for a firm like {{companyName}}.}\n\n{{senderFirst}}"
+          }
+        ]
+      },
+      {
+        "delay": 3,
+        "variants": [
+          {
+            "subject": "",
+            "body": "{{firstName}}, {quick follow-up on this|bumping this up}.\n\n{The pattern I keep seeing|What prompted my note}: most retained firms {{{companyName}}'s size|at your stage} are leaving {real search volume|a meaningful number of placements} on the table by not running outbound.\n\n{Referrals are great. But they're not a system.|Not a knock on referrals. Just a gap I see constantly.}\n\n{Does this resonate at all?|Any of this ring true for {{companyName}}?|Is this landing, or am I off?}\n\n{{senderFirst}}"
+          }
+        ]
+      },
+      {
+        "delay": 4,
+        "variants": [
+          {
+            "subject": "",
+            "body": "{{firstName}}, {quick note on|here's} how the system works in practice:\n\nI {set up|build} {dedicated cold email infrastructure for {{companyName}}|a complete outbound system, separate from your main domain}. {Sequences targeting Heads of People, CHROs, and CEOs at companies actively scaling|Outreach to the exact buyers who need senior placements}.\n\n{You and your team take the calls. I handle the rest.|Your team focuses on closing the searches. The pipeline runs in the background.}\n\n{Want me to walk through what this looks like for {{companyName}}?|Open to a 15 min look at what this could produce for your practice?}\n\n{{senderFirst}}"
+          }
+        ]
+      },
+      {
+        "delay": 4,
+        "variants": [
+          {
+            "subject": "",
+            "body": "{{firstName}}, {honest question|genuinely curious}: is {growing the search pipeline|expanding {{companyName}}'s client base} a priority for {{companyName}} right now, or is the {focus elsewhere|timing off}?\n\n{Just want to make sure I'm not cluttering your inbox.|Either way is fine.}\n\n{{senderFirst}}"
+          }
+        ]
+      },
+      {
+        "delay": 6,
+        "variants": [
+          {
+            "subject": "",
+            "body": "{{firstName}}, {last note|wrapping this thread}.\n\n{If timing is off, no worries.|Totally get if the focus is elsewhere right now.} {Wanted to leave the door open for when {{companyName}}'s ready to put more structure around new client acquisition.|If retained-search prospect flow ever moves up the priority list, I'm here.}\n\n{Best of luck with the practice.|Hope the year keeps going well for {{companyName}}.}\n\n{{senderFirst}}"
+          }
+        ]
+      }
+    ]
+  },
+
+  "CC-List-RetainedRecruiters-B": {
+    "niche_default": "executive search",
+    "tier": "B",
+    "rules": ["zero em dashes", "zero exclamations", "spintax", "vars: firstName/companyName/industryNiche/senderFirst"],
+    "steps": [
+      {
+        "delay": 0,
+        "variants": [
+          {
+            "subject": "{quick thought on {{companyName}}|{{firstName}}, retained-search question|the pipeline math at {{companyName}}}",
+            "body": "{Hey|Hi} {{firstName}},\n\n{Ran across|Noticed|Came across} {{companyName}} {and the work you're doing in {{industryNiche}}|in the executive search space}.\n\n{Quick question|Curious} - how much of {{companyName}}'s search pipeline is {referrals vs. a repeatable system|relationship-driven}?\n\nMost retained firms I talk to are {80%+ referral-dependent|almost entirely network-driven}. {Works great until a slow quarter hits.|Fine until two big clients pause hiring at the same time.}\n\nI run cold email systems built for retained search that {put qualified search opportunities in front of you every week|surface companies actively scaling and likely to need senior hires}.\n\n{How is {{companyName}} handling new client acquisition outside of referrals?|What does the prospect pipeline look like for {{companyName}} right now?}\n\n{{senderFirst}}"
+          },
+          {
+            "subject": "{free pipeline audit for {{companyName}}|{{firstName}}, quick idea|{{companyName}}'s outbound opportunity}",
+            "body": "{Hey|Hi} {{firstName}},\n\n{Spent time on|Looked into} the executive search space and {{companyName}} caught my eye.\n\nI build free pipeline audits for retained search firms - {mapping out how many qualified companies in your market are actively scaling and likely to need senior placements|showing the outbound opportunity specific to your practice}.\n\n{Takes me about 30 minutes and it's yours whether we work together or not.|Free, no strings.}\n\n{Want me to build one for {{companyName}}?|If it would be useful, I can put one together this week.}\n\n{{senderFirst}}"
+          }
+        ]
+      },
+      {
+        "delay": 3,
+        "variants": [
+          {
+            "subject": "",
+            "body": "{{firstName}}, {quick follow-up|bumping this up}.\n\n{The pattern I keep seeing|What prompted my note}: most retained firms {{{companyName}}'s size|at your stage} are leaving {real search volume|a meaningful number of placements} on the table by not running outbound.\n\n{Referrals are great. Just not a system.|Not a knock on referrals. Just a gap I see constantly.}\n\n{Does this resonate at all?|Any of this ring true for {{companyName}}?}\n\n{{senderFirst}}"
+          }
+        ]
+      },
+      {
+        "delay": 4,
+        "variants": [
+          {
+            "subject": "",
+            "body": "{{firstName}}, {quick note on|here's} how this works in practice:\n\nI {set up|build} {dedicated cold email infrastructure for {{companyName}}|a complete outbound system, separate from your main domain}. {Sequences targeting Heads of People, CHROs, and CEOs at companies actively scaling|Outreach to the buyers who need senior placements}.\n\n{You take the calls. I handle the rest.|You focus on the searches. The pipeline runs in the background.}\n\n{Want me to walk through what this looks like for {{companyName}}?|Open to seeing what the prospect pool looks like in your market?}\n\n{{senderFirst}}"
+          }
+        ]
+      },
+      {
+        "delay": 4,
+        "variants": [
+          {
+            "subject": "",
+            "body": "{{firstName}}, {honest question|genuinely curious}: is {growing the search pipeline|new client acquisition} a priority for {{companyName}} right now, or is the {focus elsewhere|timing off}?\n\n{Just want to make sure I'm not cluttering your inbox.|Either way is fine.}\n\n{{senderFirst}}"
+          }
+        ]
+      },
+      {
+        "delay": 6,
+        "variants": [
+          {
+            "subject": "",
+            "body": "{{firstName}}, {last note|wrapping this thread}.\n\n{If timing is off, no worries.|Totally get if the focus is elsewhere right now.} {Wanted to leave the door open.|If pipeline ever moves up the priority list, I'm here.}\n\n{Best of luck with the practice.|Hope the year keeps going well for {{companyName}}.}\n\n{{senderFirst}}"
+          }
+        ]
+      }
+    ]
+  },
+
+  "CC-List-SpecialistAgencies-A": {
+    "niche_default": "specialist B2B agency",
+    "tier": "A",
+    "rules": ["zero em dashes", "zero exclamations", "spintax", "vars: firstName/companyName/industryNiche/senderFirst"],
+    "steps": [
+      {
+        "delay": 0,
+        "variants": [
+          {
+            "subject": "{quick question about {{companyName}}|{{firstName}}, scaling thought|the {{industryNiche}} agency math at {{companyName}}}",
+            "body": "{Hey|Hi} {{firstName}},\n\n{Ran across|Noticed|Came across} {{companyName}} {and the {{industryNiche}} work|in the specialist B2B agency space}.\n\n{Quick observation|One pattern I see}: {scaling a specialist agency via referrals alone|growing a niched B2B agency without outbound} {works great until a client churns|tends to stall around the $1-3M mark}. {The pipeline gets thin without a system behind it.|Hard to compound without a repeatable engine.}\n\nI run cold email systems built specifically for specialist B2B agencies that {put qualified prospects on your calendar every week|surface the exact decision-makers who buy {{industryNiche}} services}.\n\n{Worth a quick look at what this could mean for {{companyName}}?|Open to a 15 min walkthrough of what this could produce for an agency your size?|Interested in seeing what your prospect pool looks like?}\n\n{{senderFirst}}"
+          },
+          {
+            "subject": "{free pipeline audit for {{companyName}}|{{firstName}}, one idea|{{companyName}}'s outbound opportunity}",
+            "body": "{Hey|Hi} {{firstName}},\n\n{Took a look at|Ran across} {{companyName}} and {the {{industryNiche}} work you're doing|the specialist positioning you've built}.\n\nI put together free pipeline audits for specialist B2B agencies - {mapping out how many qualified companies in your market are likely to need {{industryNiche}} services|showing the outbound opportunity specific to your positioning}.\n\n{Takes me about 30 minutes and it's yours whether we work together or not.|Free, no strings. Yours regardless.}\n\n{Want me to build one for {{companyName}}?|If it would be helpful, I can put one together this week.|Happy to share what I find if it's useful.}\n\n{{senderFirst}}"
+          }
+        ]
+      },
+      {
+        "delay": 3,
+        "variants": [
+          {
+            "subject": "",
+            "body": "{{firstName}}, {quick bump|following up on this}.\n\n{The pattern I keep seeing|What prompted my note}: most specialist agencies {{{companyName}}'s size|at your stage} are leaving {real pipeline|a lot of meetings} on the table by not running outbound.\n\n{Referrals are great. Just not a system.|Not a knock on referrals. Just a gap I see constantly.}\n\n{Does this resonate?|Any of this ring true for {{companyName}}?|Is this landing, or am I off?}\n\n{{senderFirst}}"
+          }
+        ]
+      },
+      {
+        "delay": 4,
+        "variants": [
+          {
+            "subject": "",
+            "body": "{{firstName}}, {here's how this works for specialist agencies in practice|quick note on the system}:\n\nI {set up|build} {dedicated cold email infrastructure for {{companyName}}|a complete outbound system, separate from your main domain}. {Sequences targeting the exact decision-makers who buy specialist {{industryNiche}} services|Personalized outreach to RevOps leaders, CMOs, and Heads of Growth at companies that need what you do}.\n\n{You take the calls. I handle the rest.|You focus on delivery. The pipeline runs in the background.}\n\n{Want me to walk through what this looks like for {{companyName}}?|Open to a 15 min look?}\n\n{{senderFirst}}"
+          }
+        ]
+      },
+      {
+        "delay": 4,
+        "variants": [
+          {
+            "subject": "",
+            "body": "{{firstName}}, {honest question|genuinely curious}: is {growing the agency's prospect engine|filling pipeline outside referrals} a priority for {{companyName}} right now, or is the {focus elsewhere|timing off}?\n\n{Just want to make sure I'm not cluttering your inbox.|Either way is fine.}\n\n{{senderFirst}}"
+          }
+        ]
+      },
+      {
+        "delay": 6,
+        "variants": [
+          {
+            "subject": "",
+            "body": "{{firstName}}, {last note|wrapping this thread}.\n\n{If timing is off, no worries.|Totally get if delivery is the priority right now.} {Wanted to leave the door open for when pipeline moves up the list.|If outbound ever becomes a priority for {{companyName}}, I'm here.}\n\n{Best of luck with the agency.|Hope the year keeps going well for {{companyName}}.}\n\n{{senderFirst}}"
+          }
+        ]
+      }
+    ]
+  },
+
+  "CC-List-SpecialistAgencies-B": {
+    "niche_default": "specialist B2B agency",
+    "tier": "B",
+    "rules": ["zero em dashes", "zero exclamations", "spintax", "vars: firstName/companyName/industryNiche/senderFirst"],
+    "steps": [
+      {
+        "delay": 0,
+        "variants": [
+          {
+            "subject": "{quick thought on {{companyName}}|{{firstName}}, agency pipeline question|the {{industryNiche}} agency math}",
+            "body": "{Hey|Hi} {{firstName}},\n\n{Ran across|Noticed|Came across} {{companyName}} {and the {{industryNiche}} work|in the specialist B2B agency space}.\n\n{Quick question|Curious} - how much of {{companyName}}'s pipeline is {referrals vs. a repeatable system|relationship-driven}?\n\nMost specialist agencies I talk to are {80%+ referral-dependent|almost entirely network-driven}. {Works great until a slow quarter hits.|Fine until a big client churns and there's nothing behind it.}\n\nI run cold email systems built specifically for specialist B2B agencies that {put qualified prospects on your calendar every week|surface the exact decision-makers who buy specialist {{industryNiche}} services}.\n\n{How is {{companyName}} handling new business outside of referrals?|What does the prospect pipeline look like for {{companyName}} right now?}\n\n{{senderFirst}}"
+          },
+          {
+            "subject": "{free pipeline audit for {{companyName}}|{{firstName}}, quick idea|{{companyName}}'s outbound opportunity}",
+            "body": "{Hey|Hi} {{firstName}},\n\n{Spent time on|Looked into} the specialist {{industryNiche}} agency space and {{companyName}} caught my eye.\n\nI build free pipeline audits for specialist B2B agencies - {mapping out how many qualified companies in your market are likely to need {{industryNiche}} services|showing the outbound opportunity specific to your positioning}.\n\n{Takes me about 30 minutes and it's yours whether we work together or not.|Free, no strings.}\n\n{Want me to build one for {{companyName}}?|If it would be useful, I can put one together this week.}\n\n{{senderFirst}}"
+          }
+        ]
+      },
+      {
+        "delay": 3,
+        "variants": [
+          {
+            "subject": "",
+            "body": "{{firstName}}, {quick follow-up|bumping this up}.\n\n{The pattern I keep seeing|What prompted my note}: most specialist agencies {{{companyName}}'s size|at your stage} are leaving {real pipeline|a lot of meetings} on the table by not running outbound.\n\n{Referrals are great. Just not a system.|Not a knock on referrals. Just a gap I see constantly.}\n\n{Does this resonate at all?|Any of this ring true for {{companyName}}?}\n\n{{senderFirst}}"
+          }
+        ]
+      },
+      {
+        "delay": 4,
+        "variants": [
+          {
+            "subject": "",
+            "body": "{{firstName}}, {quick note on|here's} how this works in practice:\n\nI {set up|build} {dedicated cold email infrastructure for {{companyName}}|a complete outbound system, separate from your main domain}. {Sequences targeting decision-makers who buy specialist {{industryNiche}} services|Outreach to the exact buyers your agency was built to serve}.\n\n{You take the calls. I handle the rest.|You focus on delivery. The pipeline runs in the background.}\n\n{Want me to walk through what this looks like for {{companyName}}?|Open to seeing what the prospect pool looks like?}\n\n{{senderFirst}}"
+          }
+        ]
+      },
+      {
+        "delay": 4,
+        "variants": [
+          {
+            "subject": "",
+            "body": "{{firstName}}, {honest question|genuinely curious}: is {new client acquisition|growing {{companyName}}'s prospect engine} a priority for {{companyName}} right now, or is the {focus elsewhere|timing off}?\n\n{Just want to make sure I'm not cluttering your inbox.|Either way is fine.}\n\n{{senderFirst}}"
+          }
+        ]
+      },
+      {
+        "delay": 6,
+        "variants": [
+          {
+            "subject": "",
+            "body": "{{firstName}}, {last note|wrapping this thread}.\n\n{If timing is off, no worries.|Totally get if the focus is elsewhere right now.} {Wanted to leave the door open.|If pipeline ever moves up the priority list, I'm here.}\n\n{Best of luck with the agency.|Hope the year keeps going well for {{companyName}}.}\n\n{{senderFirst}}"
+          }
+        ]
+      }
+    ]
+  }
+}
