@@ -34,6 +34,15 @@ async function jsonOrThrow<T>(res: Response, label: string): Promise<T> {
   return res.json() as Promise<T>;
 }
 
+// Per-token rate limit is 5 req/s (verified via response headers in Task 4).
+// Sleep ~220ms between sequential paginated requests to stay safely under
+// the limit (5 req/s = 200ms; +10% safety margin).
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+const INTER_PAGE_DELAY_MS = 220;
+
 // ---- Types ----
 
 export interface AIArkAccountFilter {
@@ -173,6 +182,7 @@ export async function searchPeople(
     page += 1;
 
     if (batch.length === 0) break;
+    if (!last && records.length < maxResults) await sleep(INTER_PAGE_DELAY_MS);
   }
 
   return { records: records.slice(0, maxResults), totalElements, trackId };
@@ -271,6 +281,7 @@ export async function searchCompanies(
     last = !!data.last || batch.length === 0;
     page += 1;
     if (batch.length === 0) break;
+    if (!last && records.length < maxResults) await sleep(INTER_PAGE_DELAY_MS);
   }
 
   return { records: records.slice(0, maxResults), totalElements };

@@ -8,6 +8,8 @@
 
 # testing
 /coverage
+/test-results/
+/playwright-report/
 
 # next.js
 /.next/
@@ -26,7 +28,9 @@ yarn-debug.log*
 yarn-error.log*
 
 # local env files
-.env*.local
+.env
+.env.*
+!.env.example
 apis.txt
 
 # vercel
@@ -35,3 +39,6 @@ apis.txt
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# niche-2026 list-build artifacts (large CSVs, smoke tests)
+/data/niche-2026/

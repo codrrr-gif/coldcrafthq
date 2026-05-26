@@ -3,6 +3,12 @@
 Task 1 of the new-niche list-build plan (`/docs/superpowers/plans/2026-05-26-new-niche-list-build.md`).
 Probed live against the AI Ark contact-data API on 2026-05-26 with the provided API key. All paths, headers, and field names below are verified by real HTTP responses, not guessed from docs alone.
 
+> **2026-05-26 corrections (Task 4 smoke test surfaced these):**
+> 1. The People Search filter for industry is `industries` (plural) with a nested `{any: {include: {mode, content}}}` shape, NOT bare `industry: ["..."]`. Bare-array form returns `400 "request not readable"`.
+> 2. Title filter location is `contact.experience.latest.title.any.include.{mode,content}`, NOT `contact.current_position.titles`.
+> 3. `/people` is NOT free — confirmed via `x-credit: -0.5` response header. Costs **0.5 credits per call** regardless of `size`. The plan's "metadata-first free iteration" assumption is wrong; tight `size=100` pagination is the only credit-efficient path.
+> The corrected example payloads are in §4 below. The old (incorrect) examples are kept in `<details>` for audit.
+
 Docs root: `https://docs.ai-ark.com/` (also `https://docs.ai-ark.com/llms.txt` for the machine-readable index).
 
 > The vendor's marketing site is **`ai-ark.com`** (not `aiark.io`, which is an unrelated Korean dental brand, and not `aiark.com`, which is a different parked site). The API host is `api.ai-ark.com`.
@@ -137,9 +143,54 @@ Content-Type: application/json
 X-TOKEN: <API_KEY>
 ```
 
-**Critical:** This endpoint returns rich profile metadata but **NO email field**. Emails require a separate call to the email-finder pipeline (Section 6).
+**Critical:** This endpoint returns rich profile metadata but **NO email field**. Emails require a separate call to the email-finder pipeline (Section 6). `/people` charges **0.5 credits per call** (confirmed via `x-credit: -0.5` response header on every successful call, any size).
 
-Filter shape (mirrors `/companies` for `account`, adds `contact` for person attributes):
+Filter shape — VERIFIED 2026-05-26 via live `200 OK` responses:
+
+```json
+{
+  "page": 0,
+  "size": 100,
+  "account": {
+    "industries": {
+      "any": {
+        "include": {
+          "mode": "WORD",
+          "content": ["staffing and recruiting", "executive search", "human resources services"]
+        }
+      }
+    },
+    "employeeSize": { "type": "RANGE", "range": [{ "start": 5, "end": 75 }] },
+    "location": {
+      "any": { "include": ["United States", "Canada"] }
+    }
+  },
+  "contact": {
+    "experience": {
+      "latest": {
+        "title": {
+          "any": {
+            "include": {
+              "mode": "SMART",
+              "content": ["Managing Partner", "Founder", "Founding Partner"]
+            }
+          }
+        }
+      }
+    }
+  },
+  "lists": { "people_id": { "exclude": ["<list-id>"] } }
+}
+```
+
+Key shape notes (these caused real 400s in Task 4 probing):
+- `industries` is plural and uses the nested `{any|all: {include|exclude: {mode, content}}}` shape. Modes: `WORD` (exact whole-word match), `SMART` (fuzzy). `any` = OR-match; `all` = AND-match.
+- Title is at `contact.experience.latest.title`, not `contact.current_position.titles`. Same nested `any/all → include/exclude → mode/content` shape.
+- `location.country: ["United States"]` (bare array) is REJECTED; use `location.any.include: ["United States"]`.
+- The Task 1 probing that succeeded with `industry: ["..."]` may have been a quirk of `/companies` (different schema) — `/people` strictly requires the nested shape.
+
+<details>
+<summary>Original (incorrect) payload example — kept for audit trail</summary>
 
 ```json
 {
@@ -156,6 +207,8 @@ Filter shape (mirrors `/companies` for `account`, adds `contact` for person attr
   "lists": { "people_id": { "exclude": ["<list-id>"] } }
 }
 ```
+Status: `400 "request not readable"` — bare `industry` array and `current_position.titles` both rejected by the Spring Boot deserializer.
+</details>
 
 Real probed response (one record, sanitized — emails redacted per task rules; this record happened not to include one anyway since people-search returns no email):
 
@@ -372,7 +425,7 @@ Docs additionally state:
 
 **Answer: NO.** There is no `verify_emails` flag. AI Ark's architecture is different from Apollo/Lusha:
 
-- `/people` (People Search) is metadata-only: profile + company + LinkedIn. **Zero email returned, no verification billed.** This is effectively "raw, unverified" — but it's also "no email at all".
+- `/people` (People Search) returns metadata only: profile + company + LinkedIn. **No email returned, no verification billed**, but it is NOT free — every call costs **0.5 credits** (confirmed via `x-credit: -0.5` response header, Task 4). At `size=100` that's 0.005 credits/record — cheap, but adds up: 100 pages = 50 credits.
 - To get an email you MUST call `/people/email-finder`, `/people/export`, or `/people/export/single`. **Every email returned is BounceBan-verified in real time**, and **1 credit is charged per successful find** (0.5 enrich + 0.5 verify). Failed finds cost 0.
 - There is no "give me the email without verifying it" mode. This is repeatedly stressed across `find-emails-by-track-id`, `export-with-email`, `export-single`, and `email-finder-results` doc pages: "All emails (SMTP & CATCH_ALL) returned by the API are verified in real time by BounceBan."
 

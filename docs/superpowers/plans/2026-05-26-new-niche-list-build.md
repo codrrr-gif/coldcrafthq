@@ -871,44 +871,61 @@ This pull is **free** — `/people` returns metadata (name, title, company, Link
 
 - [ ] **Step 1: Write the params file**
 
-Create `data/niche-2026/params-retained-recruiters.json`:
+Create `data/niche-2026/params-retained-recruiters.json` using the CORRECTED nested filter schema (Task 4 surfaced that Task 1's bare-array schema returns 400 — see `docs/niche-2026/ai-ark-api-notes.md`):
 
 ```json
 {
+  "page": 0,
+  "size": 100,
+  "maxResults": 2500,
   "account": {
-    "industry": [
-      "staffing and recruiting",
-      "executive search",
-      "human resources services"
-    ],
+    "industries": {
+      "any": {
+        "include": {
+          "mode": "WORD",
+          "content": [
+            "staffing and recruiting",
+            "executive search",
+            "human resources services"
+          ]
+        }
+      }
+    },
     "employeeSize": {
       "type": "RANGE",
       "range": [{ "start": 5, "end": 75 }]
     },
     "location": {
-      "country": ["United States", "Canada"]
+      "any": { "include": ["United States", "Canada"] }
     }
   },
   "contact": {
-    "current_position": {
-      "titles": [
-        "Managing Partner",
-        "Founder",
-        "Founding Partner",
-        "Managing Director",
-        "President",
-        "Practice Lead",
-        "VP Business Development",
-        "Vice President Business Development"
-      ]
+    "experience": {
+      "latest": {
+        "title": {
+          "any": {
+            "include": {
+              "mode": "SMART",
+              "content": [
+                "Managing Partner",
+                "Founder",
+                "Founding Partner",
+                "Managing Director",
+                "President",
+                "Practice Lead",
+                "VP Business Development",
+                "Vice President Business Development"
+              ]
+            }
+          }
+        }
+      }
     }
-  },
-  "size": 100,
-  "maxResults": 5000
+  }
 }
 ```
 
-> Note: AI Ark's `/people` filter shape doesn't expose excluded_titles natively. Filter excluded titles (Recruiter, Sourcer, etc.) post-pull via the niche_scoring module in Task 8 — those titles already return 0 score (hard gate).
+> Note: AI Ark's `/people` filter exposes `exclude` arrays too, but we rely on the niche_scoring module (Task 8) for excluded titles (Recruiter, Sourcer, etc.) — those titles already return 0 score (hard gate). The verified ICP-1 universe at these filters is **~5,908** people (Task 4 probe); `maxResults: 2500` pulls a representative chunk.
 
 - [ ] **Step 2: Write the Python wrapper**
 
@@ -1006,41 +1023,58 @@ Same shape as Task 5: free `/people` metadata pull, no credits spent, no emails 
 
 - [ ] **Step 1: Write the params file**
 
-Create `data/niche-2026/params-specialist-agencies.json`:
+Create `data/niche-2026/params-specialist-agencies.json` (using the CORRECTED nested filter schema):
 
 ```json
 {
+  "page": 0,
+  "size": 100,
+  "maxResults": 2500,
   "account": {
-    "industry": [
-      "public relations and communications",
-      "marketing services",
-      "advertising services",
-      "management consulting"
-    ],
+    "industries": {
+      "any": {
+        "include": {
+          "mode": "WORD",
+          "content": [
+            "public relations and communications",
+            "marketing services",
+            "advertising services",
+            "management consulting"
+          ]
+        }
+      }
+    },
     "employeeSize": {
       "type": "RANGE",
       "range": [{ "start": 5, "end": 50 }]
     },
     "location": {
-      "country": ["United States", "Canada"]
+      "any": { "include": ["United States", "Canada"] }
     }
   },
   "contact": {
-    "current_position": {
-      "titles": [
-        "Founder",
-        "CEO",
-        "Managing Director",
-        "Managing Partner",
-        "Head of New Business",
-        "Head of Growth",
-        "COO",
-        "Chief Operating Officer"
-      ]
+    "experience": {
+      "latest": {
+        "title": {
+          "any": {
+            "include": {
+              "mode": "SMART",
+              "content": [
+                "Founder",
+                "CEO",
+                "Managing Director",
+                "Managing Partner",
+                "Head of New Business",
+                "Head of Growth",
+                "COO",
+                "Chief Operating Officer"
+              ]
+            }
+          }
+        }
+      }
     }
-  },
-  "size": 100,
-  "maxResults": 5000
+  }
 }
 ```
 
