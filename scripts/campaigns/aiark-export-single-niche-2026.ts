@@ -25,7 +25,12 @@ import { exportPersonSingle, getCredits } from '../../src/lib/sources/ai-ark';
 
 const ROOT = process.env.HOME + '/Documents/coldcrafthq';
 const SEG_DIR = `${ROOT}/segmented-lists`;
-const THROTTLE_MS = 220;
+// AI Ark allows 5 req/s per token. With per-call latency of 3-30s, 5 concurrent
+// workers naturally pace us at ~1 call/s/worker = 5 req/s peak — at or under
+// the rate limit. No additional throttle needed (and the retry-on-429 layer
+// in the client backstops any overage). Throughput: ~60 records/min vs ~12
+// for the serial version.
+const CONCURRENCY = 5;
 
 interface Job {
   scoredCsv: string;
@@ -58,6 +63,34 @@ const JOBS: Job[] = [
 
 function sleep(ms: number): Promise<void> {
   return new Promise(r => setTimeout(r, ms));
+}
+
+/**
+ * Run a pool of `concurrency` workers over `items`. Each worker pulls the next
+ * index from a shared atomic counter, calls `handler`, and loops until the
+ * queue is empty. Order of completion is not preserved.
+ */
+async function runPool<T>(
+  items: T[],
+  concurrency: number,
+  handler: (item: T, idx: number) => Promise<void>,
+): Promise<void> {
+  let cursor = 0;
+  const total = items.length;
+  async function worker(): Promise<void> {
+    while (true) {
+      const i = cursor++;
+      if (i >= total) return;
+      try {
+        await handler(items[i], i);
+      } catch (err) {
+        // Handlers are expected to catch their own errors. If one escapes
+        // here, log and continue — the pool keeps working.
+        console.error(`  [pool-err] item ${i}: ${(err as Error).message}`);
+      }
+    }
+  }
+  await Promise.all(Array.from({ length: concurrency }, () => worker()));
 }
 
 // ---- Minimal CSV parser (handles quoted fields with commas and double-quotes) ----
@@ -199,12 +232,15 @@ async function processJob(job: Job, dedupeSet: Set<string>): Promise<JobStats> {
     duped: 0, written: 0, skippedResume: 0,
   };
 
+  // Single-threaded JS means appendFileSync + Set ops + counter++ are atomic.
+  // No mutex needed for the shared stats/dedupe state.
   const start = Date.now();
-  for (let i = 0; i < scored.length; i++) {
-    const row = scored[i];
+  let completed = 0;
+
+  await runPool(scored, CONCURRENCY, async (row, idx) => {
     const pid = (row.aiark_person_id || '').trim();
-    if (!pid) { stats.errored++; continue; }
-    if (processedIds.has(pid)) { stats.skippedResume++; continue; }
+    if (!pid) { stats.errored++; completed++; return; }
+    if (processedIds.has(pid)) { stats.skippedResume++; completed++; return; }
 
     let result;
     try {
@@ -212,8 +248,8 @@ async function processJob(job: Job, dedupeSet: Set<string>): Promise<JobStats> {
     } catch (err) {
       stats.errored++;
       console.error(`  [err] ${pid}: ${(err as Error).message}`);
-      await sleep(THROTTLE_MS);
-      continue;
+      completed++;
+      return;
     }
     stats.attempted++;
 
@@ -240,18 +276,17 @@ async function processJob(job: Job, dedupeSet: Set<string>): Promise<JobStats> {
       }
     }
 
-    if ((i + 1) % 50 === 0) {
+    completed++;
+    if (completed % 50 === 0) {
       const elapsed = (Date.now() - start) / 1000;
-      const rate = (i + 1) / elapsed;
+      const rate = completed / elapsed;
       console.log(
-        `  [${job.label}] ${i + 1}/${scored.length} ` +
+        `  [${job.label}] ${completed}/${scored.length} ` +
         `found=${stats.found} missed=${stats.missed} dupe=${stats.duped} err=${stats.errored} ` +
         `| ${rate.toFixed(1)}/s`
       );
     }
-
-    await sleep(THROTTLE_MS);
-  }
+  });
 
   const elapsed = ((Date.now() - start) / 1000).toFixed(0);
   console.log(`  done in ${elapsed}s — ${JSON.stringify(stats)}`);

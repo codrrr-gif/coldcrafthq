@@ -296,7 +296,10 @@ export async function exportPersonSingle(idOrUrl: { id?: string; url?: string })
       method: 'POST',
       headers: headers(),
       body: JSON.stringify(body),
-      signal: AbortSignal.timeout(30_000),
+      // /people/export/single can take 30-60s per call (BounceBan SMTP probe
+      // can be slow on misconfigured MX servers). 60s timeout matches AI Ark's
+      // own typical p99 for this endpoint.
+      signal: AbortSignal.timeout(60_000),
     });
 
     if (res.status === 404) {
