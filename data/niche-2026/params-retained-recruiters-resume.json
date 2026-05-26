@@ -1,0 +1,49 @@
+{
+  "page": 15,
+  "size": 100,
+  "maxResults": 5000,
+  "account": {
+    "industries": {
+      "any": {
+        "include": {
+          "mode": "WORD",
+          "content": [
+            "staffing and recruiting",
+            "executive search",
+            "human resources services"
+          ]
+        }
+      }
+    },
+    "employeeSize": {
+      "type": "RANGE",
+      "range": [{ "start": 5, "end": 75 }]
+    },
+    "location": {
+      "any": { "include": ["United States", "Canada"] }
+    }
+  },
+  "contact": {
+    "experience": {
+      "latest": {
+        "title": {
+          "any": {
+            "include": {
+              "mode": "SMART",
+              "content": [
+                "Managing Partner",
+                "Founder",
+                "Founding Partner",
+                "Managing Director",
+                "President",
+                "Practice Lead",
+                "VP Business Development",
+                "Vice President Business Development"
+              ]
+            }
+          }
+        }
+      }
+    }
+  }
+}

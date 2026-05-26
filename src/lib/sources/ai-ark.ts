@@ -43,6 +43,53 @@ function sleep(ms: number): Promise<void> {
 
 const INTER_PAGE_DELAY_MS = 220;
 
+// AI Ark's edge has been observed to drop the TCP connection mid-stream
+// (ECONNRESET surfaces as undici's TypeError("terminated")). Network errors,
+// timeouts, and 5xx server errors are all worth one retry with backoff —
+// these are transient and the records aren't paid for unless the call
+// completes successfully. The retries are sequential and respect the rate
+// limit via the inter-page throttle.
+const RETRY_BACKOFFS_MS = [500, 1500, 4000];
+
+function isTransientError(err: unknown): boolean {
+  if (!(err instanceof Error)) return false;
+  const msg = err.message || '';
+  if (err.name === 'AbortError') return true;
+  if (msg.includes('terminated')) return true;      // undici ECONNRESET
+  if (msg.includes('ECONNRESET')) return true;
+  if (msg.includes('ETIMEDOUT')) return true;
+  if (msg.includes('ENOTFOUND')) return true;
+  if (msg.includes('EAI_AGAIN')) return true;
+  if (msg.includes('socket hang up')) return true;
+  if (/AI Ark .* failed: 5\d\d /.test(msg)) return true; // 5xx server error
+  if (/AI Ark .* failed: 429 /.test(msg)) return true;   // rate-limit
+  return false;
+}
+
+async function retryableFetch(
+  doFetch: () => Promise<Response>,
+  label: string,
+): Promise<Response> {
+  let lastErr: unknown;
+  for (let attempt = 0; attempt <= RETRY_BACKOFFS_MS.length; attempt++) {
+    try {
+      return await doFetch();
+    } catch (err) {
+      lastErr = err;
+      if (!isTransientError(err) || attempt === RETRY_BACKOFFS_MS.length) {
+        throw err;
+      }
+      const wait = RETRY_BACKOFFS_MS[attempt];
+      // Surface retries to stderr-like channel via console.error so the CLI
+      // (and Python wrapper) can see them in real-time without polluting stdout.
+      // eslint-disable-next-line no-console
+      console.error(`[ai-ark] ${label} attempt ${attempt + 1} failed (${(err as Error).message}); retrying in ${wait}ms`);
+      await sleep(wait);
+    }
+  }
+  throw lastErr;
+}
+
 // ---- Types ----
 
 export interface AIArkAccountFilter {
@@ -66,6 +113,7 @@ export interface AIArkPeopleSearchParams {
   lists?: { people_id?: { exclude?: string[] }; company_id?: { exclude?: string[] } };
   size?: number;       // page size (capped at MAX_PAGE_SIZE_SEARCH for /people)
   maxResults?: number; // total ceiling across pages
+  page?: number;       // starting page (zero-based). Use for resume; default 0.
 }
 
 export interface AIArkPersonRecord {
@@ -130,11 +178,11 @@ export interface AIArkCredits {
 // ---- API ----
 
 export async function getCredits(): Promise<AIArkCredits> {
-  const res = await fetch(`${API_BASE}/payments/credits`, {
+  const res = await retryableFetch(() => fetch(`${API_BASE}/payments/credits`, {
     method: 'GET',
     headers: headers(),
     signal: AbortSignal.timeout(15_000),
-  });
+  }), 'getCredits');
   return jsonOrThrow<AIArkCredits>(res, 'getCredits');
 }
 
@@ -152,7 +200,7 @@ export async function searchPeople(
   const maxResults = params.maxResults ?? 5_000;
 
   const records: AIArkPersonRecord[] = [];
-  let page = 0;
+  let page = params.page ?? 0;
   let totalElements = 0;
   let trackId: string | null = null;
   let last = false;
@@ -166,12 +214,12 @@ export async function searchPeople(
       page,
       size: Math.min(pageSize, remaining),
     };
-    const res = await fetch(`${API_BASE}/people`, {
+    const res = await retryableFetch(() => fetch(`${API_BASE}/people`, {
       method: 'POST',
       headers: headers(),
       body: JSON.stringify(body),
       signal: AbortSignal.timeout(30_000),
-    });
+    }), `searchPeople page=${page}`);
     const data = await jsonOrThrow<{
       content?: AIArkPersonRecord[];
       totalElements?: number;
@@ -219,22 +267,22 @@ export async function exportPeopleWithEmail(
     size: Math.min(params.size ?? MAX_PAGE_SIZE_EXPORT, MAX_PAGE_SIZE_EXPORT),
     webhook,
   };
-  const res = await fetch(`${API_BASE}/people/export`, {
+  const res = await retryableFetch(() => fetch(`${API_BASE}/people/export`, {
     method: 'POST',
     headers: headers(),
     body: JSON.stringify(body),
     signal: AbortSignal.timeout(30_000),
-  });
+  }), 'exportPeopleWithEmail');
   const data = await jsonOrThrow<{ trackId: string; state?: string }>(res, 'exportPeopleWithEmail');
   if (!data.trackId) throw new Error('AI Ark export did not return a trackId');
   return data.trackId;
 }
 
 export async function getExportStatistics(trackId: string): Promise<AIArkExportStatistics> {
-  const res = await fetch(
+  const res = await retryableFetch(() => fetch(
     `${API_BASE}/people/export/${encodeURIComponent(trackId)}/statistics`,
     { method: 'GET', headers: headers(), signal: AbortSignal.timeout(15_000) },
-  );
+  ), `getExportStatistics(${trackId})`);
   return jsonOrThrow<AIArkExportStatistics>(res, 'getExportStatistics');
 }
 
@@ -243,10 +291,10 @@ export async function getExportInquiries(
   page = 0,
   size = 100,
 ): Promise<AIArkExportInquiriesPage> {
-  const res = await fetch(
+  const res = await retryableFetch(() => fetch(
     `${API_BASE}/people/export/${encodeURIComponent(trackId)}/inquiries?page=${page}&size=${size}`,
     { method: 'GET', headers: headers(), signal: AbortSignal.timeout(30_000) },
-  );
+  ), `getExportInquiries(${trackId},page=${page})`);
   return jsonOrThrow<AIArkExportInquiriesPage>(res, 'getExportInquiries');
 }
 
@@ -278,12 +326,12 @@ export async function searchCompanies(
       page,
       size: Math.min(pageSize, remaining),
     };
-    const res = await fetch(`${API_BASE}/companies`, {
+    const res = await retryableFetch(() => fetch(`${API_BASE}/companies`, {
       method: 'POST',
       headers: headers(),
       body: JSON.stringify(body),
       signal: AbortSignal.timeout(30_000),
-    });
+    }), `searchCompanies page=${page}`);
     const data = await jsonOrThrow<{
       content?: Array<Record<string, unknown>>;
       totalElements?: number;

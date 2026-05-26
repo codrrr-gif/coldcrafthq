@@ -70,27 +70,36 @@ async function cmdCredits() {
 async function cmdSearchPeople() {
   const paramsPath = arg('params')!;
   const outPath = arg('out')!;
+  const appendMode = arg('append', false) !== undefined;
   const params = JSON.parse(readFileSync(paramsPath, 'utf8'));
 
   // CRITICAL: stream pages to disk via onPage callback. AI Ark charges
   // 0.5cr per record; a mid-pagination ECONNRESET must NOT lose
-  // already-paid-for pages. Write header on first page, append thereafter.
+  // already-paid-for pages. Write header on first page (unless --append),
+  // then append each subsequent page.
+  //
+  // --append: skip the header write and append to the existing file. Use this
+  // to resume a partial pull. Pair with `params.page = <next-page>` to skip
+  // already-fetched pages, and tighten `maxResults` to the REMAINING records.
   let columns: string[] | null = null;
   let totalWritten = 0;
   let pagesWritten = 0;
+  let headerWritten = appendMode;  // in append mode, header already exists
 
   const onPage = (batch: AIArkPersonRecord[], pageNum: number): void => {
     if (batch.length === 0) return;
     const rows = batch.map(personRow);
     if (columns === null) {
       columns = Object.keys(rows[0]);
-      writeFileSync(outPath, columns.join(',') + '\n');
+      if (!headerWritten) {
+        writeFileSync(outPath, columns.join(',') + '\n');
+        headerWritten = true;
+      }
     }
     const body = rows.map(r => columns!.map(c => escape(r[c])).join(',')).join('\n') + '\n';
     appendFileSync(outPath, body);
     totalWritten += rows.length;
     pagesWritten += 1;
-    // Per-page progress to stderr so the caller can see we're not stalled
     console.error(JSON.stringify({
       event: 'page', page: pageNum, wroteThisPage: rows.length, totalWritten,
     }));
@@ -104,7 +113,6 @@ async function cmdSearchPeople() {
     }));
     if (result.trackId) console.log(result.trackId);
   } catch (err) {
-    // Even on failure, the file already contains everything paid for.
     console.error(JSON.stringify({
       event: 'aborted', wrote: totalWritten, pagesWritten,
       out: outPath, error: err instanceof Error ? err.message : String(err),
