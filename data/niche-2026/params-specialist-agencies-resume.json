@@ -1,0 +1,50 @@
+{
+  "page": 10,
+  "size": 100,
+  "maxResults": 5000,
+  "account": {
+    "industries": {
+      "any": {
+        "include": {
+          "mode": "WORD",
+          "content": [
+            "public relations and communications",
+            "marketing services",
+            "advertising services",
+            "management consulting"
+          ]
+        }
+      }
+    },
+    "employeeSize": {
+      "type": "RANGE",
+      "range": [{ "start": 5, "end": 50 }]
+    },
+    "location": {
+      "any": { "include": ["United States", "Canada"] }
+    }
+  },
+  "contact": {
+    "experience": {
+      "latest": {
+        "title": {
+          "any": {
+            "include": {
+              "mode": "SMART",
+              "content": [
+                "Founder",
+                "CEO",
+                "Managing Director",
+                "Managing Partner",
+                "Head of New Business",
+                "Head of Growth",
+                "COO",
+                "Chief Operating Officer"
+              ]
+            }
+          }
+        }
+      }
+    }
+  }
+}

@@ -53,35 +53,43 @@ const RETRY_BACKOFFS_MS = [500, 1500, 4000];
 
 function isTransientError(err: unknown): boolean {
   if (!(err instanceof Error)) return false;
+  // Node's outer `fetch failed` error wraps the real cause; inspect both.
   const msg = err.message || '';
+  const causeMsg = err.cause instanceof Error ? err.cause.message : '';
+  const causeCode = err.cause instanceof Error
+    ? (err.cause as NodeJS.ErrnoException).code ?? ''
+    : '';
+  const combined = `${msg} ${causeMsg} ${causeCode}`;
+
   if (err.name === 'AbortError') return true;
-  if (msg.includes('terminated')) return true;      // undici ECONNRESET
-  if (msg.includes('ECONNRESET')) return true;
-  if (msg.includes('ETIMEDOUT')) return true;
-  if (msg.includes('ENOTFOUND')) return true;
-  if (msg.includes('EAI_AGAIN')) return true;
-  if (msg.includes('socket hang up')) return true;
-  if (/AI Ark .* failed: 5\d\d /.test(msg)) return true; // 5xx server error
-  if (/AI Ark .* failed: 429 /.test(msg)) return true;   // rate-limit
+  if (combined.includes('terminated')) return true;        // undici body-stream abort
+  if (combined.includes('fetch failed')) return true;      // Node generic wrapper
+  if (combined.includes('ECONNRESET')) return true;
+  if (combined.includes('ETIMEDOUT')) return true;
+  if (combined.includes('ENOTFOUND')) return true;
+  if (combined.includes('EAI_AGAIN')) return true;
+  if (combined.includes('socket hang up')) return true;
+  if (combined.includes('EPIPE')) return true;
+  if (/AI Ark .* failed: 5\d\d /.test(msg)) return true;  // 5xx server error
+  if (/AI Ark .* failed: 429 /.test(msg)) return true;    // rate-limit
   return false;
 }
 
-async function retryableFetch(
-  doFetch: () => Promise<Response>,
-  label: string,
-): Promise<Response> {
+// Wraps any async operation (fetch + body-parse) with transient-error retry.
+// Body-stream errors from undici (e.g. "terminated" / ECONNRESET during
+// res.json()) surface AFTER fetch returns, so the entire fetch+parse
+// pipeline must live inside this wrapper — not just the initial fetch call.
+async function withRetry<T>(op: () => Promise<T>, label: string): Promise<T> {
   let lastErr: unknown;
   for (let attempt = 0; attempt <= RETRY_BACKOFFS_MS.length; attempt++) {
     try {
-      return await doFetch();
+      return await op();
     } catch (err) {
       lastErr = err;
       if (!isTransientError(err) || attempt === RETRY_BACKOFFS_MS.length) {
         throw err;
       }
       const wait = RETRY_BACKOFFS_MS[attempt];
-      // Surface retries to stderr-like channel via console.error so the CLI
-      // (and Python wrapper) can see them in real-time without polluting stdout.
       // eslint-disable-next-line no-console
       console.error(`[ai-ark] ${label} attempt ${attempt + 1} failed (${(err as Error).message}); retrying in ${wait}ms`);
       await sleep(wait);
@@ -178,12 +186,14 @@ export interface AIArkCredits {
 // ---- API ----
 
 export async function getCredits(): Promise<AIArkCredits> {
-  const res = await retryableFetch(() => fetch(`${API_BASE}/payments/credits`, {
-    method: 'GET',
-    headers: headers(),
-    signal: AbortSignal.timeout(15_000),
-  }), 'getCredits');
-  return jsonOrThrow<AIArkCredits>(res, 'getCredits');
+  return withRetry(async () => {
+    const res = await fetch(`${API_BASE}/payments/credits`, {
+      method: 'GET',
+      headers: headers(),
+      signal: AbortSignal.timeout(15_000),
+    });
+    return jsonOrThrow<AIArkCredits>(res, 'getCredits');
+  }, 'getCredits');
 }
 
 // Per-page callback type — fires after each successful page fetch so the
@@ -214,20 +224,22 @@ export async function searchPeople(
       page,
       size: Math.min(pageSize, remaining),
     };
-    const res = await retryableFetch(() => fetch(`${API_BASE}/people`, {
-      method: 'POST',
-      headers: headers(),
-      body: JSON.stringify(body),
-      signal: AbortSignal.timeout(30_000),
-    }), `searchPeople page=${page}`);
-    const data = await jsonOrThrow<{
-      content?: AIArkPersonRecord[];
-      totalElements?: number;
-      totalPages?: number;
-      last?: boolean;
-      number?: number;
-      trackId?: string;
-    }>(res, 'searchPeople');
+    const data = await withRetry(async () => {
+      const res = await fetch(`${API_BASE}/people`, {
+        method: 'POST',
+        headers: headers(),
+        body: JSON.stringify(body),
+        signal: AbortSignal.timeout(30_000),
+      });
+      return jsonOrThrow<{
+        content?: AIArkPersonRecord[];
+        totalElements?: number;
+        totalPages?: number;
+        last?: boolean;
+        number?: number;
+        trackId?: string;
+      }>(res, 'searchPeople');
+    }, `searchPeople page=${page}`);
 
     const batch = data.content ?? [];
     records.push(...batch);
@@ -267,23 +279,27 @@ export async function exportPeopleWithEmail(
     size: Math.min(params.size ?? MAX_PAGE_SIZE_EXPORT, MAX_PAGE_SIZE_EXPORT),
     webhook,
   };
-  const res = await retryableFetch(() => fetch(`${API_BASE}/people/export`, {
-    method: 'POST',
-    headers: headers(),
-    body: JSON.stringify(body),
-    signal: AbortSignal.timeout(30_000),
-  }), 'exportPeopleWithEmail');
-  const data = await jsonOrThrow<{ trackId: string; state?: string }>(res, 'exportPeopleWithEmail');
+  const data = await withRetry(async () => {
+    const res = await fetch(`${API_BASE}/people/export`, {
+      method: 'POST',
+      headers: headers(),
+      body: JSON.stringify(body),
+      signal: AbortSignal.timeout(30_000),
+    });
+    return jsonOrThrow<{ trackId: string; state?: string }>(res, 'exportPeopleWithEmail');
+  }, 'exportPeopleWithEmail');
   if (!data.trackId) throw new Error('AI Ark export did not return a trackId');
   return data.trackId;
 }
 
 export async function getExportStatistics(trackId: string): Promise<AIArkExportStatistics> {
-  const res = await retryableFetch(() => fetch(
-    `${API_BASE}/people/export/${encodeURIComponent(trackId)}/statistics`,
-    { method: 'GET', headers: headers(), signal: AbortSignal.timeout(15_000) },
-  ), `getExportStatistics(${trackId})`);
-  return jsonOrThrow<AIArkExportStatistics>(res, 'getExportStatistics');
+  return withRetry(async () => {
+    const res = await fetch(
+      `${API_BASE}/people/export/${encodeURIComponent(trackId)}/statistics`,
+      { method: 'GET', headers: headers(), signal: AbortSignal.timeout(15_000) },
+    );
+    return jsonOrThrow<AIArkExportStatistics>(res, 'getExportStatistics');
+  }, `getExportStatistics(${trackId})`);
 }
 
 export async function getExportInquiries(
@@ -291,11 +307,13 @@ export async function getExportInquiries(
   page = 0,
   size = 100,
 ): Promise<AIArkExportInquiriesPage> {
-  const res = await retryableFetch(() => fetch(
-    `${API_BASE}/people/export/${encodeURIComponent(trackId)}/inquiries?page=${page}&size=${size}`,
-    { method: 'GET', headers: headers(), signal: AbortSignal.timeout(30_000) },
-  ), `getExportInquiries(${trackId},page=${page})`);
-  return jsonOrThrow<AIArkExportInquiriesPage>(res, 'getExportInquiries');
+  return withRetry(async () => {
+    const res = await fetch(
+      `${API_BASE}/people/export/${encodeURIComponent(trackId)}/inquiries?page=${page}&size=${size}`,
+      { method: 'GET', headers: headers(), signal: AbortSignal.timeout(30_000) },
+    );
+    return jsonOrThrow<AIArkExportInquiriesPage>(res, 'getExportInquiries');
+  }, `getExportInquiries(${trackId},page=${page})`);
 }
 
 export interface AIArkCompanySearchParams {
@@ -326,17 +344,19 @@ export async function searchCompanies(
       page,
       size: Math.min(pageSize, remaining),
     };
-    const res = await retryableFetch(() => fetch(`${API_BASE}/companies`, {
-      method: 'POST',
-      headers: headers(),
-      body: JSON.stringify(body),
-      signal: AbortSignal.timeout(30_000),
-    }), `searchCompanies page=${page}`);
-    const data = await jsonOrThrow<{
-      content?: Array<Record<string, unknown>>;
-      totalElements?: number;
-      last?: boolean;
-    }>(res, 'searchCompanies');
+    const data = await withRetry(async () => {
+      const res = await fetch(`${API_BASE}/companies`, {
+        method: 'POST',
+        headers: headers(),
+        body: JSON.stringify(body),
+        signal: AbortSignal.timeout(30_000),
+      });
+      return jsonOrThrow<{
+        content?: Array<Record<string, unknown>>;
+        totalElements?: number;
+        last?: boolean;
+      }>(res, 'searchCompanies');
+    }, `searchCompanies page=${page}`);
     const batch = data.content ?? [];
     records.push(...batch);
     totalElements = data.totalElements ?? totalElements;

@@ -119,10 +119,22 @@ describe('ai-ark client', () => {
     expect(url).toMatch(/\/people\/export\/track-abc\/inquiries\?page=0&size=100$/);
   });
 
-  it('throws on non-OK status with response body in message', async () => {
+  it('throws on non-OK status with response body in message (non-retried 4xx)', async () => {
     (global.fetch as any).mockResolvedValue({
-      ok: false, status: 429, text: async () => 'rate limited',
+      ok: false, status: 400, text: async () => 'bad request',
     });
-    await expect(getCredits()).rejects.toThrow(/429.*rate limited/);
+    // 400 is NOT transient, so no retries — error surfaces immediately.
+    await expect(getCredits()).rejects.toThrow(/400.*bad request/);
+    expect(global.fetch).toHaveBeenCalledTimes(1);
   });
+
+  it('retries on 5xx and surfaces last status if exhausted', async () => {
+    // All 4 attempts (initial + 3 retries) return 500. Final throw carries the 500.
+    (global.fetch as any).mockResolvedValue({
+      ok: false, status: 500, text: async () => 'server error',
+    });
+    await expect(getCredits()).rejects.toThrow(/500.*server error/);
+    // 1 initial + 3 retries = 4 calls
+    expect(global.fetch).toHaveBeenCalledTimes(4);
+  }, 15_000);
 });

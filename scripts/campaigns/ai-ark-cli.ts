@@ -15,12 +15,13 @@ import {
 } from '../../src/lib/sources/ai-ark';
 
 function arg(name: string, required = true): string | undefined {
-  const found = process.argv.find(a => a.startsWith(`--${name}=`));
-  if (!found) {
-    if (required) throw new Error(`Missing --${name}=`);
-    return undefined;
-  }
-  return found.split('=', 2)[1];
+  // Accept both `--name=value` and bare `--name` (flag form, returns "true").
+  const pair = process.argv.find(a => a.startsWith(`--${name}=`));
+  if (pair) return pair.split('=', 2)[1];
+  const bareFlag = process.argv.includes(`--${name}`);
+  if (bareFlag) return 'true';
+  if (required) throw new Error(`Missing --${name}=`);
+  return undefined;
 }
 
 function escape(v: unknown): string {
