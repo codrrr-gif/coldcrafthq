@@ -6,7 +6,7 @@
 //   tsx ai-ark-cli.ts export-people --params=path/to/params.json --webhook=https://noop.example.com/wh
 //   tsx ai-ark-cli.ts poll-export --track-id=<trackId>
 //   tsx ai-ark-cli.ts fetch-export --track-id=<trackId> --out=path/to/verified.csv
-import { readFileSync, writeFileSync } from 'node:fs';
+import { appendFileSync, readFileSync, writeFileSync } from 'node:fs';
 import {
   getCredits, searchPeople, exportPeopleWithEmail,
   getExportStatistics, getExportInquiries,
@@ -71,15 +71,46 @@ async function cmdSearchPeople() {
   const paramsPath = arg('params')!;
   const outPath = arg('out')!;
   const params = JSON.parse(readFileSync(paramsPath, 'utf8'));
-  const result = await searchPeople(params);
-  const rows = result.records.map(personRow);
-  writeFileSync(outPath, rowsToCsv(rows));
-  console.error(JSON.stringify({
-    wrote: rows.length, totalElements: result.totalElements,
-    trackId: result.trackId, out: outPath,
-  }));
-  // Also emit trackId on stdout (single line) so Python can capture it
-  if (result.trackId) console.log(result.trackId);
+
+  // CRITICAL: stream pages to disk via onPage callback. AI Ark charges
+  // 0.5cr per record; a mid-pagination ECONNRESET must NOT lose
+  // already-paid-for pages. Write header on first page, append thereafter.
+  let columns: string[] | null = null;
+  let totalWritten = 0;
+  let pagesWritten = 0;
+
+  const onPage = (batch: AIArkPersonRecord[], pageNum: number): void => {
+    if (batch.length === 0) return;
+    const rows = batch.map(personRow);
+    if (columns === null) {
+      columns = Object.keys(rows[0]);
+      writeFileSync(outPath, columns.join(',') + '\n');
+    }
+    const body = rows.map(r => columns!.map(c => escape(r[c])).join(',')).join('\n') + '\n';
+    appendFileSync(outPath, body);
+    totalWritten += rows.length;
+    pagesWritten += 1;
+    // Per-page progress to stderr so the caller can see we're not stalled
+    console.error(JSON.stringify({
+      event: 'page', page: pageNum, wroteThisPage: rows.length, totalWritten,
+    }));
+  };
+
+  try {
+    const result = await searchPeople(params, onPage);
+    console.error(JSON.stringify({
+      event: 'done', wrote: totalWritten, pagesWritten,
+      totalElements: result.totalElements, trackId: result.trackId, out: outPath,
+    }));
+    if (result.trackId) console.log(result.trackId);
+  } catch (err) {
+    // Even on failure, the file already contains everything paid for.
+    console.error(JSON.stringify({
+      event: 'aborted', wrote: totalWritten, pagesWritten,
+      out: outPath, error: err instanceof Error ? err.message : String(err),
+    }));
+    throw err;
+  }
 }
 
 async function cmdExportPeople() {

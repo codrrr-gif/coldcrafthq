@@ -138,8 +138,15 @@ export async function getCredits(): Promise<AIArkCredits> {
   return jsonOrThrow<AIArkCredits>(res, 'getCredits');
 }
 
+// Per-page callback type — fires after each successful page fetch so the
+// caller can persist immediately (CRITICAL for credit preservation: AI Ark
+// charges 0.5 credits per RECORD, and a mid-pagination ECONNRESET would
+// otherwise lose all in-memory pages already paid for).
+export type AIArkPageCallback = (batch: AIArkPersonRecord[], pageNum: number) => void | Promise<void>;
+
 export async function searchPeople(
   params: AIArkPeopleSearchParams,
+  onPage?: AIArkPageCallback,
 ): Promise<AIArkPeopleSearchResult> {
   const pageSize = Math.min(params.size ?? MAX_PAGE_SIZE_SEARCH, MAX_PAGE_SIZE_SEARCH);
   const maxResults = params.maxResults ?? 5_000;
@@ -179,6 +186,13 @@ export async function searchPeople(
     totalElements = data.totalElements ?? totalElements;
     trackId = data.trackId ?? trackId;
     last = !!data.last || batch.length === 0;
+
+    // Per-page callback — let the caller persist this page BEFORE we advance.
+    // Failures in the callback bubble up so the caller can decide whether to
+    // continue or abort (since the page is already paid for, partial persistence
+    // is always better than throwing without writing).
+    if (batch.length > 0 && onPage) await onPage(batch, page);
+
     page += 1;
 
     if (batch.length === 0) break;

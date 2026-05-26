@@ -877,7 +877,7 @@ Create `data/niche-2026/params-retained-recruiters.json` using the CORRECTED nes
 {
   "page": 0,
   "size": 100,
-  "maxResults": 2500,
+  "maxResults": 5000,
   "account": {
     "industries": {
       "any": {
@@ -925,7 +925,7 @@ Create `data/niche-2026/params-retained-recruiters.json` using the CORRECTED nes
 }
 ```
 
-> Note: AI Ark's `/people` filter exposes `exclude` arrays too, but we rely on the niche_scoring module (Task 8) for excluded titles (Recruiter, Sourcer, etc.) — those titles already return 0 score (hard gate). The verified ICP-1 universe at these filters is **~5,908** people (Task 4 probe); `maxResults: 2500` pulls a representative chunk.
+> Note: AI Ark's `/people` filter exposes `exclude` arrays too, but we rely on the niche_scoring module (Task 8) for excluded titles (Recruiter, Sourcer, etc.) — those titles already return 0 score (hard gate). The verified ICP-1 universe at these filters is **~5,908** people (Task 4 probe); `maxResults: 5000` will pull essentially the entire universe. **Cost: ~2,500 credits at 0.5cr/record.**
 
 - [ ] **Step 2: Write the Python wrapper**
 
@@ -1029,7 +1029,7 @@ Create `data/niche-2026/params-specialist-agencies.json` (using the CORRECTED ne
 {
   "page": 0,
   "size": 100,
-  "maxResults": 2500,
+  "maxResults": 5000,
   "account": {
     "industries": {
       "any": {
@@ -1077,6 +1077,8 @@ Create `data/niche-2026/params-specialist-agencies.json` (using the CORRECTED ne
   }
 }
 ```
+
+**Cost: ~2,500 credits at 0.5cr/record.**
 
 > The 4 broad industry codes cast wide. The niche_scoring module (Task 8) applies the agency-specialism cut via the `AGENCY_ICP.industry_match_keywords` whitelist (PR / RevOps / lifecycle / demand-gen / performance / B2B content / sales enablement / ABM / fractional CMO) AND the `industry_blacklist` (design studios / dev shops / branding studios). Anything not matching the whitelist falls below 90 score and out of Tier A; anything in the blacklist gets 0.
 

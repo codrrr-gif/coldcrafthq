@@ -3,10 +3,11 @@
 Task 1 of the new-niche list-build plan (`/docs/superpowers/plans/2026-05-26-new-niche-list-build.md`).
 Probed live against the AI Ark contact-data API on 2026-05-26 with the provided API key. All paths, headers, and field names below are verified by real HTTP responses, not guessed from docs alone.
 
-> **2026-05-26 corrections (Task 4 smoke test surfaced these):**
+> **2026-05-26 corrections (Tasks 4 and 5 surfaced these):**
 > 1. The People Search filter for industry is `industries` (plural) with a nested `{any: {include: {mode, content}}}` shape, NOT bare `industry: ["..."]`. Bare-array form returns `400 "request not readable"`.
 > 2. Title filter location is `contact.experience.latest.title.any.include.{mode,content}`, NOT `contact.current_position.titles`.
-> 3. `/people` is NOT free — confirmed via `x-credit: -0.5` response header. Costs **0.5 credits per call** regardless of `size`. The plan's "metadata-first free iteration" assumption is wrong; tight `size=100` pagination is the only credit-efficient path.
+> 3. `/people` cost is **0.5 credits per RECORD RETURNED**, NOT per call (Task 4 misread this as 0.5/call by only probing at `size=1`/`size=5`). At `size=100` a single call returns `x-credit: -50.0` (50 credits). At `maxResults=5000` and `size=100`, the metadata pull costs 2,500 credits.
+> 4. Mid-pagination ECONNRESETs are a real failure mode — the client now streams pages to disk via an onPage callback (commit landed after Task 5 first attempt burned 200cr on a dropped connection with nothing written to disk).
 > The corrected example payloads are in §4 below. The old (incorrect) examples are kept in `<details>` for audit.
 
 Docs root: `https://docs.ai-ark.com/` (also `https://docs.ai-ark.com/llms.txt` for the machine-readable index).
@@ -143,7 +144,7 @@ Content-Type: application/json
 X-TOKEN: <API_KEY>
 ```
 
-**Critical:** This endpoint returns rich profile metadata but **NO email field**. Emails require a separate call to the email-finder pipeline (Section 6). `/people` charges **0.5 credits per call** (confirmed via `x-credit: -0.5` response header on every successful call, any size).
+**Critical:** This endpoint returns rich profile metadata but **NO email field**. Emails require a separate call to the email-finder pipeline (Section 6). `/people` charges **0.5 credits per RECORD returned** (confirmed via `x-credit` response header: `-0.5` at size=1, `-50.0` at size=100). At maxResults=5000 size=100, the metadata pull costs 2,500 credits.
 
 Filter shape — VERIFIED 2026-05-26 via live `200 OK` responses:
 
@@ -425,7 +426,7 @@ Docs additionally state:
 
 **Answer: NO.** There is no `verify_emails` flag. AI Ark's architecture is different from Apollo/Lusha:
 
-- `/people` (People Search) returns metadata only: profile + company + LinkedIn. **No email returned, no verification billed**, but it is NOT free — every call costs **0.5 credits** (confirmed via `x-credit: -0.5` response header, Task 4). At `size=100` that's 0.005 credits/record — cheap, but adds up: 100 pages = 50 credits.
+- `/people` (People Search) returns metadata only: profile + company + LinkedIn. **No email returned, no verification billed**, but it is NOT free — costs **0.5 credits per RECORD returned** (confirmed via `x-credit` response header: -0.5 at size=1, -50.0 at size=100). Forecast: a 5K-record metadata pull costs 2,500 credits.
 - To get an email you MUST call `/people/email-finder`, `/people/export`, or `/people/export/single`. **Every email returned is BounceBan-verified in real time**, and **1 credit is charged per successful find** (0.5 enrich + 0.5 verify). Failed finds cost 0.
 - There is no "give me the email without verifying it" mode. This is repeatedly stressed across `find-emails-by-track-id`, `export-with-email`, `export-single`, and `email-finder-results` doc pages: "All emails (SMTP & CATCH_ALL) returned by the API are verified in real time by BounceBan."
 

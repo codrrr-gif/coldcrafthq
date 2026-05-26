@@ -14,9 +14,10 @@ Build two untested ColdCraft outbound niches in parallel using AI Ark as a new c
 
 ## Constraints
 
-- **AI Ark credit budget:** 5,079.4 credits remaining as of 2026-05-26 (after Task 4 probing). 1 credit per landed verified email (0.5 enrichment + 0.5 BounceBan verification), 0 credits per unfindable contact.
-- **`/people` (metadata search) ALSO costs credits**, at 0.5 credits per call (confirmed via `x-credit: -0.5` header in Task 4). At `size=100` that's 0.005 credits/record. Forecast for two metadata pulls at 2,500 records each = 50 pages total = ~25 credits.
-- **Cohort tightened to 2,500 per niche** (was 5,000). Reduces metadata-stage spend and leaves more credit headroom for the export stage. Final verified leads after dedupe + drops expected: ~1,500-2,000 per niche.
+- **AI Ark credit budget:** ~19,800 credits available as of 2026-05-26 (after user top-up following the Task 5 cost-model discovery). 1 credit per landed verified email (0.5 enrichment + 0.5 BounceBan verification), 0 credits per unfindable contact.
+- **`/people` (metadata search) costs 0.5 credits per RECORD RETURNED** (confirmed via `x-credit` header: -0.5 at size=1, -50.0 at size=100). Forecast for two metadata pulls at 5,000 records each = 5,000 credits.
+- **Cohort restored to 5,000 per niche** (the original plan). Total forecast spend: 5,000 cr metadata + ~5,000 cr export = ~10,000 cr (~50% of balance), leaving ~10,000 cr buffer for retries and signal scrape costs.
+- **Mid-pagination resilience:** the AI Ark client streams each page to disk immediately (via the `onPage` callback). A dropped connection after page N preserves all rows from pages 0..N-1 in the CSV.
 - **AI Ark always verifies emails via BounceBan in real time** — there is no `verify_emails: false` toggle. This means MillionVerifier is no longer needed in the pipeline (would be redundant verification spend). Reacher VPS stays in the pipeline for: (a) sanity-rechecking catch-all results, (b) periodic re-verification before send if a list ages >30 days.
 - **Geo:** US + Canada (matches AI Ark coverage, top-tier deliverability, single timezone band for sending). Filter syntax: `location: { country: ["United States", "Canada"] }`.
 - **Send rules (locked, from V9):** Mon-Fri, 7:00-10:30 AM ET, 30/day per inbox, stop-on-reply, text-only, no link tracking, zero em dashes, zero exclamation marks, spintax format throughout.
@@ -26,11 +27,11 @@ Build two untested ColdCraft outbound niches in parallel using AI Ark as a new c
 ## Architecture
 
 ```
-Stage 1 — METADATA SEARCH (AI Ark /people, 0.5 credits/call)
-  ├─ Pull 1: Retained Recruiters (US+CA, ICP-1 filters)  → up to 2,500 metadata records
-  └─ Pull 2: Specialist B2B Agencies (US+CA, ICP-2 filters) → up to 2,500 metadata records
+Stage 1 — METADATA SEARCH (AI Ark /people, 0.5 credits/RECORD)
+  ├─ Pull 1: Retained Recruiters (US+CA, ICP-1 filters)  → up to 5,000 metadata records
+  └─ Pull 2: Specialist B2B Agencies (US+CA, ICP-2 filters) → up to 5,000 metadata records
      Returns rich profile + company + LinkedIn data. NO emails yet.
-     Cost: ~25 credits total (50 pages × 0.5 credits, at size=100).
+     Cost: ~5,000 credits total (10K records × 0.5 cr). Streamed to disk per page.
 
 Stage 2 — SIGNAL ENRICHMENT (existing modules, on metadata only)
   ├─ indeed-jobs scrape: tag company if matching role posted <30d
@@ -54,10 +55,10 @@ Stage 5 — DEDUPE + SEGMENT (no separate MillionVerifier step)
   ├─ Optional: Reacher VPS spot-check on CATCH_ALL-flagged emails (BounceBan
   │   marks them via output[].domainType — re-verify these for confidence)
   └─ 4 final CSVs → 4 Instantly campaigns:
-       • CC-List-RetainedRecruiters-A   (signal-matched, est. 200-400)
-       • CC-List-RetainedRecruiters-B   (firmo only,     est. 800-1,200)
-       • CC-List-SpecialistAgencies-A   (signal-matched, est. 200-400)
-       • CC-List-SpecialistAgencies-B   (firmo only,     est. 800-1,200)
+       • CC-List-RetainedRecruiters-A   (signal-matched, est. 400-700)
+       • CC-List-RetainedRecruiters-B   (firmo only,     est. 1,400-1,900)
+       • CC-List-SpecialistAgencies-A   (signal-matched, est. 400-700)
+       • CC-List-SpecialistAgencies-B   (firmo only,     est. 1,400-1,900)
 
 Stage 6 — LEARN (signal-scoring-feedback, existing loop)
   Tier A vs Tier B reply-rate delta per niche → revises scoring weights
