@@ -2,34 +2,38 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Ship 4 Instantly campaigns (Tier A + B × 2 niches) targeting retained executive-search recruiters and specialist B2B agencies in US+CA, sourced via AI Ark (10K cap, in-house verification), signal-enriched via existing modules, and scored with a niche-specific 100-pt matrix.
+**Goal:** Ship 4 Instantly campaigns (Tier A + B × 2 niches) targeting retained executive-search recruiters and specialist B2B agencies in US+CA, sourced via AI Ark (~5K credit budget, BounceBan-verified by AI Ark itself — no MillionVerifier needed), signal-enriched via existing modules, and scored with a niche-specific 100-pt matrix.
 
-**Architecture:** Python orchestration scripts in `/scripts/campaigns/` chain stages (source → signal-enrich → score+tier → verify+dedupe → push), reading/writing CSVs at `/data/niche-2026/` for idempotency. One new TypeScript module `src/lib/sources/ai-ark.ts` exposes the AI Ark API to both TS and (via a CLI wrapper) Python. Niche-specific tier-gating implemented in a pure-Python module under `scripts/campaigns/lib/` so it can be unit-tested.
+**Architecture:** Two-stage AI Ark pull — first a free `/people` metadata search (no credits, no emails), then `signal-enrich → score+tier-gate` runs on the metadata, then `/people/export` spends ~1 credit per BounceBan-verified email on ONLY Tier A + B survivors. Polling-based async (no webhook). Python orchestration scripts in `/scripts/campaigns/` chain stages, reading/writing CSVs at `/data/niche-2026/` for idempotency. One new TypeScript module `src/lib/sources/ai-ark.ts` exposes three primitives (`searchCompanies`, `searchPeople`, `exportPeopleWithEmail` + pollers). Niche-specific tier-gating implemented in a pure-Python module under `scripts/campaigns/lib/`.
 
-**Tech Stack:** Next.js TS (existing app), Python 3 for orchestration (matches existing campaign scripts), AI Ark API (new source), Instantly API (existing client), MillionVerifier API (existing), Apify (existing scrapers via `signals/utils.ts`).
+**Tech Stack:** Next.js TS (existing app), Python 3 for orchestration (matches existing campaign scripts), AI Ark API (new source, `X-TOKEN` auth, base `https://api.ai-ark.com/api/developer-portal/v1`), Instantly API (existing client), Apify (existing scrapers via `signals/utils.ts`). Reacher VPS available for optional catch-all spot-check but not in critical path.
 
 **Reference spec:** `docs/superpowers/specs/2026-05-25-new-niche-list-build-design.md`
+
+**Reference API contract:** `docs/niche-2026/ai-ark-api-notes.md` (Task 1 output)
 
 ---
 
 ## File Structure
 
 **New files:**
-- `src/lib/sources/ai-ark.ts` — AI Ark API client (TS)
+- `src/lib/sources/ai-ark.ts` — AI Ark API client (TS) exposing `searchCompanies`, `searchPeople`, `exportPeopleWithEmail`, `getExportStatistics`, `getExportInquiries`, `getCredits`
 - `src/lib/sources/__tests__/ai-ark.test.ts` — unit tests
-- `scripts/campaigns/ai-ark-cli.ts` — Node CLI wrapper so Python scripts can invoke the AI Ark client
+- `scripts/campaigns/ai-ark-cli.ts` — Node CLI wrapper (multi-command: `search-people`, `export-people`, `poll-export`, `fetch-export`, `credits`)
 - `scripts/campaigns/lib/niche_scoring.py` — pure-Python niche-specific tier-gating
 - `scripts/campaigns/lib/__init__.py`
 - `scripts/campaigns/test_niche_scoring.py` — pytest for the scorer
-- `scripts/campaigns/ai-ark-pull-retained-recruiters.py` — Stage 1 (ICP-1)
-- `scripts/campaigns/ai-ark-pull-specialist-agencies.py` — Stage 1 (ICP-2)
+- `scripts/campaigns/ai-ark-pull-retained-recruiters.py` — Stage 1 metadata pull (no credit spend)
+- `scripts/campaigns/ai-ark-pull-specialist-agencies.py` — Stage 1 metadata pull (no credit spend)
 - `scripts/campaigns/enrich-signals-niche-2026.py` — Stage 2
-- `scripts/campaigns/score-and-tier-niche-2026.py` — Stage 3
-- `scripts/campaigns/verify-and-dedupe-niche-2026.py` — Stage 4
-- `scripts/campaigns/setup-niche-2026-campaigns.py` — Stage 5 (campaigns + sequences)
-- `scripts/campaigns/push-niche-2026-leads.py` — Stage 5 (upload leads)
+- `scripts/campaigns/score-and-tier-niche-2026.py` — Stage 3 (tier-split metadata CSVs)
+- `scripts/campaigns/aiark-export-and-poll-niche-2026.py` — Stage 4 (spend credits on Tier A+B survivors; poll until DONE; fetch verified emails)
+- `scripts/campaigns/dedupe-niche-2026.py` — Stage 5 (dedupe vs existing 18K; no separate verifier — BounceBan already ran)
+- `scripts/campaigns/setup-niche-2026-campaigns.py` — Stage 6 (campaigns + sequences)
+- `scripts/campaigns/push-niche-2026-leads.py` — Stage 6 (upload leads)
 - `scripts/campaigns/sequences/niche-2026-sequences.json` — 4 sequence definitions
 - `data/niche-2026/` — intermediate artifacts (gitignored)
+- `docs/niche-2026/ai-ark-api-notes.md` — already created (Task 1 output)
 - `segmented-lists/CC-List-RetainedRecruiters-A.csv`, `-B.csv`, `CC-List-SpecialistAgencies-A.csv`, `-B.csv` — final outputs
 
 **Modified files:**
@@ -38,12 +42,27 @@
 
 ---
 
-## Task 1: Discover AI Ark API contract
+## Task 1: Discover AI Ark API contract — ✅ DONE (commit `83b0a52`)
 
-**Files:**
-- Create: `docs/niche-2026/ai-ark-api-notes.md`
+Findings live in `docs/niche-2026/ai-ark-api-notes.md`. Key load-bearing facts that all subsequent tasks must respect:
 
-- [ ] **Step 1: Find the AI Ark documentation URL**
+- **Base URL:** `https://api.ai-ark.com/api/developer-portal/v1`
+- **Auth header:** `X-TOKEN: <raw key>` (NOT Bearer, NOT x-api-key — the docs are wrong about this)
+- **Three primitives:** `POST /companies`, `POST /people` (metadata, no email, no credit cost), `POST /people/export` (async, BounceBan-verified emails, 1 credit per landed email)
+- **No `verify_emails: false` toggle.** Emails always BounceBan-verified.
+- **Async via polling:** `GET /people/export/{trackId}/statistics` for state, `GET /people/export/{trackId}/inquiries?page=N&size=100` for results. `webhook` is REQUIRED on POST but if we don't care about the webhook firing we can supply a dummy URL and just poll.
+- **Credit balance:** 5,099.4 as of 2026-05-26 (`GET /payments/credits`). Plan assumes ~5K verified leads total ceiling.
+- **Rate limits:** 5 req/s, 300/min, 18,000/hour per X-TOKEN.
+- **Filter syntax:** geo uses full country names (`["United States", "Canada"]`); headcount uses `employeeSize: { type: "RANGE", range: [{start: 5, end: 75}] }`.
+
+Skip to Task 2.
+
+---
+
+<details>
+<summary>Original Task 1 steps (kept for audit trail — already executed)</summary>
+
+- [x] **Step 1: Find the AI Ark documentation URL**
 
 The user has the API key but no docs link. AI Ark is most likely `aiark.io` or `aiark.com`. Search:
 
@@ -88,12 +107,14 @@ Write findings to `docs/niche-2026/ai-ark-api-notes.md` with:
 
 If the API does not match the expected shape (e.g., it's a chat/RAG API, not a B2B data API), STOP and report back to the user before writing the client. The spec assumes contact-data semantics.
 
-- [ ] **Step 5: Commit the notes**
+- [x] **Step 5: Commit the notes**
 
 ```bash
 git add docs/niche-2026/ai-ark-api-notes.md
 git commit -m "docs: capture AI Ark API contract for new-niche list build"
 ```
+
+</details>
 
 ---
 
@@ -103,13 +124,28 @@ git commit -m "docs: capture AI Ark API contract for new-niche list build"
 - Create: `src/lib/sources/ai-ark.ts`
 - Test: `src/lib/sources/__tests__/ai-ark.test.ts`
 
-- [ ] **Step 1: Write the failing test**
+This client exposes 6 functions matching the AI Ark contract from Task 1's notes (`docs/niche-2026/ai-ark-api-notes.md`):
+- `getCredits()` — `GET /payments/credits` (read-only balance check)
+- `searchCompanies(params)` — `POST /companies` (firmographic search, paginated)
+- `searchPeople(params)` — `POST /people` (metadata only, no email, no credit cost, paginated)
+- `exportPeopleWithEmail(params, webhook?)` — `POST /people/export` (async job, 1 credit per landed verified email)
+- `getExportStatistics(trackId)` — `GET /people/export/{trackId}/statistics` (poll job state)
+- `getExportInquiries(trackId, page, size)` — `GET /people/export/{trackId}/inquiries?page&size` (paged results)
+
+- [ ] **Step 1: Write the failing tests**
 
 Create `src/lib/sources/__tests__/ai-ark.test.ts`:
 
 ```typescript
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { searchLeads, type AIArkSearchParams } from '../ai-ark';
+import {
+  getCredits,
+  searchPeople,
+  exportPeopleWithEmail,
+  getExportStatistics,
+  getExportInquiries,
+  type AIArkPeopleSearchParams,
+} from '../ai-ark';
 
 describe('ai-ark client', () => {
   beforeEach(() => {
@@ -119,63 +155,119 @@ describe('ai-ark client', () => {
 
   it('throws when API key is missing', async () => {
     delete process.env.AI_ARK_API;
-    await expect(searchLeads({ industries: ['recruiting'], headcount_min: 5, headcount_max: 75, geo: ['US', 'CA'], titles: ['Founder'] }))
-      .rejects.toThrow('AI_ARK_API not set');
+    await expect(getCredits()).rejects.toThrow('AI_ARK_API not set');
   });
 
-  it('sends the documented auth header and request body', async () => {
+  it('uses X-TOKEN auth header with raw key (no Bearer prefix)', async () => {
+    (global.fetch as any).mockResolvedValue({
+      ok: true, json: async () => ({ total: 5099.4 }),
+    });
+    await getCredits();
+    const [, opts] = (global.fetch as any).mock.calls[0];
+    expect(opts.headers['X-TOKEN']).toBe('test-key-123');
+    expect(opts.headers.Authorization).toBeUndefined();
+  });
+
+  it('searchPeople sends documented body shape and paginates', async () => {
+    (global.fetch as any)
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({
+          content: [{ id: 'p1', profile: { first_name: 'A' } }],
+          totalElements: 2, totalPages: 2, last: false, number: 0,
+          trackId: 'track-1',
+        }),
+      })
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({
+          content: [{ id: 'p2', profile: { first_name: 'B' } }],
+          totalElements: 2, totalPages: 2, last: true, number: 1,
+          trackId: 'track-1',
+        }),
+      });
+
+    const params: AIArkPeopleSearchParams = {
+      account: {
+        industry: ['staffing and recruiting'],
+        employeeSize: { type: 'RANGE', range: [{ start: 5, end: 75 }] },
+        location: { country: ['United States', 'Canada'] },
+      },
+      contact: { current_position: { titles: ['Founder', 'Managing Partner'] } },
+      size: 1,
+      maxResults: 10,
+    };
+    const result = await searchPeople(params);
+
+    expect(result.records).toHaveLength(2);
+    expect(result.trackId).toBe('track-1');
+    expect(global.fetch).toHaveBeenCalledTimes(2);
+
+    const [url, opts] = (global.fetch as any).mock.calls[0];
+    expect(url).toContain('api.ai-ark.com/api/developer-portal/v1/people');
+    expect(opts.method).toBe('POST');
+    const body = JSON.parse(opts.body);
+    expect(body.account.industry).toEqual(['staffing and recruiting']);
+    expect(body.contact.current_position.titles).toContain('Founder');
+    expect(body.page).toBe(0);
+    expect(body.size).toBe(1);
+  });
+
+  it('exportPeopleWithEmail returns trackId from async POST', async () => {
     (global.fetch as any).mockResolvedValue({
       ok: true,
-      json: async () => ({ leads: [], next_cursor: null }),
+      json: async () => ({ trackId: 'export-123', state: 'PENDING' }),
     });
+    const trackId = await exportPeopleWithEmail({
+      account: { industry: ['x'] }, contact: { current_position: { titles: ['CEO'] } }, size: 100,
+    }, 'https://noop.example.com/webhook');
+    expect(trackId).toBe('export-123');
 
-    const params: AIArkSearchParams = {
-      industries: ['Staffing & Recruiting'],
-      headcount_min: 5,
-      headcount_max: 75,
-      geo: ['US', 'CA'],
-      titles: ['Founder', 'Managing Partner'],
-      limit: 100,
-    };
-    await searchLeads(params);
-
-    expect(global.fetch).toHaveBeenCalledTimes(1);
     const [url, opts] = (global.fetch as any).mock.calls[0];
-    expect(url).toContain('aiark'); // hostname from Task 1
-    expect(opts.headers).toMatchObject({ /* auth header from Task 1 */ });
+    expect(url).toContain('/people/export');
     const body = JSON.parse(opts.body);
-    expect(body.industries).toEqual(['Staffing & Recruiting']);
-    expect(body.headcount_min).toBe(5);
-    expect(body.limit).toBe(100);
+    expect(body.webhook).toBe('https://noop.example.com/webhook');
+    expect(body.size).toBe(100);
   });
 
-  it('paginates until exhausted or limit reached', async () => {
-    (global.fetch as any)
-      .mockResolvedValueOnce({ ok: true, json: async () => ({ leads: [{ email: 'a@x.com' }], next_cursor: 'c1' }) })
-      .mockResolvedValueOnce({ ok: true, json: async () => ({ leads: [{ email: 'b@x.com' }], next_cursor: null }) });
-
-    const results = await searchLeads({
-      industries: ['x'], headcount_min: 1, headcount_max: 100, geo: ['US'], titles: ['CEO'], limit: 1000,
-    });
-
-    expect(results).toHaveLength(2);
-    expect(global.fetch).toHaveBeenCalledTimes(2);
-  });
-
-  it('throws with response body on non-OK status', async () => {
+  it('getExportStatistics returns parsed state object', async () => {
     (global.fetch as any).mockResolvedValue({
-      ok: false,
-      status: 429,
-      text: async () => 'rate limited',
+      ok: true,
+      json: async () => ({ state: 'IN_PROGRESS', statistics: { total: 100, found: 42 } }),
     });
+    const stats = await getExportStatistics('track-abc');
+    expect(stats.state).toBe('IN_PROGRESS');
+    expect(stats.statistics.found).toBe(42);
+    const [url] = (global.fetch as any).mock.calls[0];
+    expect(url).toMatch(/\/people\/export\/track-abc\/statistics$/);
+  });
 
-    await expect(searchLeads({ industries: ['x'], headcount_min: 1, headcount_max: 10, geo: ['US'], titles: ['CEO'] }))
-      .rejects.toThrow(/429.*rate limited/);
+  it('getExportInquiries pages through DONE results', async () => {
+    (global.fetch as any).mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        content: [{ refId: 'r1', state: 'DONE', input: { firstname: 'A' },
+                    output: [{ address: 'a@x.com', status: 'VALID' }] }],
+        totalElements: 1, totalPages: 1,
+      }),
+    });
+    const page = await getExportInquiries('track-abc', 0, 100);
+    expect(page.content).toHaveLength(1);
+    expect(page.totalPages).toBe(1);
+    const [url] = (global.fetch as any).mock.calls[0];
+    expect(url).toMatch(/\/people\/export\/track-abc\/inquiries\?page=0&size=100$/);
+  });
+
+  it('throws on non-OK status with response body in message', async () => {
+    (global.fetch as any).mockResolvedValue({
+      ok: false, status: 429, text: async () => 'rate limited',
+    });
+    await expect(getCredits()).rejects.toThrow(/429.*rate limited/);
   });
 });
 ```
 
-- [ ] **Step 2: Run test to verify it fails**
+- [ ] **Step 2: Run tests to verify they fail**
 
 ```bash
 cd /Users/matt/Documents/coldcrafthq
@@ -186,46 +278,23 @@ Expected: FAIL with "Cannot find module '../ai-ark'".
 
 - [ ] **Step 3: Implement the client**
 
-Create `src/lib/sources/ai-ark.ts`. Substitute the real endpoint paths / auth scheme / response keys from Task 1's notes where placeholders appear:
+Create `src/lib/sources/ai-ark.ts`:
 
 ```typescript
 // ============================================
-// AI Ark API Client
+// AI Ark API Client (api.ai-ark.com)
 // ============================================
-// B2B contact-data source. Plan cap: 10K leads per account.
-// We bypass AI Ark's built-in email verification (uses MillionVerifier
-// downstream instead — preserves AI Ark quota for raw leads).
+// Architecture (confirmed by Task 1 probing):
+//   - searchPeople: free metadata search (no email, no credit cost)
+//   - exportPeopleWithEmail: async job, ~1 credit per BounceBan-verified email
+//   - Polling via getExportStatistics + getExportInquiries
+// Auth: X-TOKEN: <raw key> (NOT Bearer, NOT x-api-key)
+// Rate limits: 5 req/s, 300/min, 18000/hour per token
 // ============================================
 
-const API_BASE = 'https://api.aiark.io/v1'; // confirm from Task 1
-const SEARCH_PATH = '/leads/search';        // confirm from Task 1
-const PAGE_SIZE = 100;                       // confirm from Task 1
-const MAX_RESULTS_PER_CALL = 10_000;         // plan cap
-
-export interface AIArkSearchParams {
-  industries: string[];
-  headcount_min: number;
-  headcount_max: number;
-  geo: string[]; // ['US', 'CA']
-  titles: string[];
-  excluded_titles?: string[];
-  limit?: number; // overall ceiling, clamped to MAX_RESULTS_PER_CALL
-}
-
-export interface AIArkLead {
-  email: string;
-  first_name?: string;
-  last_name?: string;
-  title?: string;
-  company_name?: string;
-  company_industry?: string;
-  company_headcount?: number;
-  company_domain?: string;
-  company_location?: string;
-  linkedin_url?: string;
-  // include any additional fields AI Ark returns; pass-through unknown keys
-  [key: string]: unknown;
-}
+const API_BASE = 'https://api.ai-ark.com/api/developer-portal/v1';
+const MAX_PAGE_SIZE_SEARCH = 100;    // /people and /companies cap
+const MAX_PAGE_SIZE_EXPORT = 10_000; // /people/export single-job cap
 
 function apiKey(): string {
   const key = process.env.AI_ARK_API;
@@ -236,68 +305,277 @@ function apiKey(): string {
 function headers(): Record<string, string> {
   return {
     'Content-Type': 'application/json',
-    // CONFIRM auth scheme from Task 1 — examples below, keep ONE:
-    'x-api-key': apiKey(),
-    // 'Authorization': `Bearer ${apiKey()}`,
+    'X-TOKEN': apiKey(),
   };
 }
 
-export async function searchLeads(params: AIArkSearchParams): Promise<AIArkLead[]> {
-  const limit = Math.min(params.limit ?? MAX_RESULTS_PER_CALL, MAX_RESULTS_PER_CALL);
-  const results: AIArkLead[] = [];
-  let cursor: string | null = null;
+async function jsonOrThrow<T>(res: Response, label: string): Promise<T> {
+  if (!res.ok) {
+    const text = await res.text().catch(() => '');
+    throw new Error(`AI Ark ${label} failed: ${res.status} ${text}`);
+  }
+  return res.json() as Promise<T>;
+}
 
-  while (results.length < limit) {
-    const remaining = limit - results.length;
-    const body = {
-      industries: params.industries,
-      headcount_min: params.headcount_min,
-      headcount_max: params.headcount_max,
-      geo: params.geo,
-      titles: params.titles,
-      excluded_titles: params.excluded_titles ?? [],
-      limit: Math.min(PAGE_SIZE, remaining),
-      cursor,
-      verify_emails: false, // CRITICAL: do not consume AI Ark's verification budget
+// ---- Types ----
+
+export interface AIArkAccountFilter {
+  industry?: string[];
+  employeeSize?: { type: 'RANGE'; range: Array<{ start: number; end: number }> };
+  location?: { country?: string[]; state?: string[]; city?: string[] };
+  // Pass-through for additional documented fields:
+  [key: string]: unknown;
+}
+
+export interface AIArkContactFilter {
+  current_position?: { titles?: string[]; excluded_titles?: string[] };
+  seniority?: string[];
+  department?: string[];
+  [key: string]: unknown;
+}
+
+export interface AIArkPeopleSearchParams {
+  account?: AIArkAccountFilter;
+  contact?: AIArkContactFilter;
+  lists?: { people_id?: { exclude?: string[] }; company_id?: { exclude?: string[] } };
+  size?: number;       // page size (capped at MAX_PAGE_SIZE_SEARCH for /people)
+  maxResults?: number; // total ceiling across pages
+}
+
+export interface AIArkPersonRecord {
+  id: string;
+  identifier?: string;
+  profile?: {
+    first_name?: string; last_name?: string; full_name?: string;
+    title?: string; headline?: string;
+  };
+  link?: { linkedin?: string | null };
+  location?: {
+    country?: string; state?: string; city?: string; default?: string;
+  };
+  industry?: string;
+  position_groups?: Array<{
+    company?: {
+      id?: string; name?: string; url?: string;
+      employees?: { start?: number; end?: number | null };
     };
+    profile_positions?: Array<{ title?: string }>;
+  }>;
+  department?: { seniority?: string; functions?: string[] };
+  [key: string]: unknown;
+}
 
-    const res = await fetch(`${API_BASE}${SEARCH_PATH}`, {
+export interface AIArkPeopleSearchResult {
+  records: AIArkPersonRecord[];
+  totalElements: number;
+  trackId: string | null;
+}
+
+export interface AIArkExportStatistics {
+  state: 'PENDING' | 'IN_PROGRESS' | 'DONE' | 'FAILED' | string;
+  statistics?: { total: number; found: number; [k: string]: unknown };
+  [key: string]: unknown;
+}
+
+export interface AIArkExportInquiryRecord {
+  refId: string;
+  state: 'PENDING' | 'DONE' | 'FAILED' | string;
+  input: { firstname?: string; lastname?: string; domain?: string };
+  output: Array<{
+    address: string;
+    status: 'VALID' | 'INVALID' | 'UNKNOWN' | string;
+    subStatus?: string;
+    domainType?: 'SMTP' | 'CATCH_ALL' | string;
+    [key: string]: unknown;
+  }>;
+  [key: string]: unknown;
+}
+
+export interface AIArkExportInquiriesPage {
+  content: AIArkExportInquiryRecord[];
+  totalElements: number;
+  totalPages: number;
+}
+
+export interface AIArkCredits {
+  total: number;
+}
+
+// ---- API ----
+
+export async function getCredits(): Promise<AIArkCredits> {
+  const res = await fetch(`${API_BASE}/payments/credits`, {
+    method: 'GET',
+    headers: headers(),
+    signal: AbortSignal.timeout(15_000),
+  });
+  return jsonOrThrow<AIArkCredits>(res, 'getCredits');
+}
+
+export async function searchPeople(
+  params: AIArkPeopleSearchParams,
+): Promise<AIArkPeopleSearchResult> {
+  const pageSize = Math.min(params.size ?? MAX_PAGE_SIZE_SEARCH, MAX_PAGE_SIZE_SEARCH);
+  const maxResults = params.maxResults ?? 5_000;
+
+  const records: AIArkPersonRecord[] = [];
+  let page = 0;
+  let totalElements = 0;
+  let trackId: string | null = null;
+  let last = false;
+
+  while (records.length < maxResults && !last) {
+    const remaining = maxResults - records.length;
+    const body = {
+      account: params.account ?? {},
+      contact: params.contact ?? {},
+      lists: params.lists,
+      page,
+      size: Math.min(pageSize, remaining),
+    };
+    const res = await fetch(`${API_BASE}/people`, {
       method: 'POST',
       headers: headers(),
       body: JSON.stringify(body),
       signal: AbortSignal.timeout(30_000),
     });
+    const data = await jsonOrThrow<{
+      content?: AIArkPersonRecord[];
+      totalElements?: number;
+      totalPages?: number;
+      last?: boolean;
+      number?: number;
+      trackId?: string;
+    }>(res, 'searchPeople');
 
-    if (!res.ok) {
-      const text = await res.text();
-      throw new Error(`AI Ark searchLeads failed: ${res.status} ${text}`);
-    }
+    const batch = data.content ?? [];
+    records.push(...batch);
+    totalElements = data.totalElements ?? totalElements;
+    trackId = data.trackId ?? trackId;
+    last = !!data.last || batch.length === 0;
+    page += 1;
 
-    const data = await res.json();
-    const leads: AIArkLead[] = data.leads ?? data.data ?? [];
-    results.push(...leads);
-
-    cursor = data.next_cursor ?? null;
-    if (!cursor || leads.length === 0) break;
+    if (batch.length === 0) break;
   }
 
-  return results.slice(0, limit);
+  return { records: records.slice(0, maxResults), totalElements, trackId };
+}
+
+export interface AIArkExportParams extends AIArkPeopleSearchParams {
+  // /people/export size cap is 10_000 in one job
+  size?: number;
+}
+
+export async function exportPeopleWithEmail(
+  params: AIArkExportParams,
+  webhook: string,
+): Promise<string> {
+  const body = {
+    account: params.account ?? {},
+    contact: params.contact ?? {},
+    lists: params.lists,
+    page: 0,
+    size: Math.min(params.size ?? MAX_PAGE_SIZE_EXPORT, MAX_PAGE_SIZE_EXPORT),
+    webhook,
+  };
+  const res = await fetch(`${API_BASE}/people/export`, {
+    method: 'POST',
+    headers: headers(),
+    body: JSON.stringify(body),
+    signal: AbortSignal.timeout(30_000),
+  });
+  const data = await jsonOrThrow<{ trackId: string; state?: string }>(res, 'exportPeopleWithEmail');
+  if (!data.trackId) throw new Error('AI Ark export did not return a trackId');
+  return data.trackId;
+}
+
+export async function getExportStatistics(trackId: string): Promise<AIArkExportStatistics> {
+  const res = await fetch(
+    `${API_BASE}/people/export/${encodeURIComponent(trackId)}/statistics`,
+    { method: 'GET', headers: headers(), signal: AbortSignal.timeout(15_000) },
+  );
+  return jsonOrThrow<AIArkExportStatistics>(res, 'getExportStatistics');
+}
+
+export async function getExportInquiries(
+  trackId: string,
+  page = 0,
+  size = 100,
+): Promise<AIArkExportInquiriesPage> {
+  const res = await fetch(
+    `${API_BASE}/people/export/${encodeURIComponent(trackId)}/inquiries?page=${page}&size=${size}`,
+    { method: 'GET', headers: headers(), signal: AbortSignal.timeout(30_000) },
+  );
+  return jsonOrThrow<AIArkExportInquiriesPage>(res, 'getExportInquiries');
+}
+
+export interface AIArkCompanySearchParams {
+  account?: AIArkAccountFilter;
+  lookalikeDomains?: string[];
+  lists?: { company_id?: { exclude?: string[] } };
+  size?: number;
+  maxResults?: number;
+}
+
+export async function searchCompanies(
+  params: AIArkCompanySearchParams,
+): Promise<{ records: Array<Record<string, unknown>>; totalElements: number }> {
+  const pageSize = Math.min(params.size ?? MAX_PAGE_SIZE_SEARCH, MAX_PAGE_SIZE_SEARCH);
+  const maxResults = params.maxResults ?? 5_000;
+
+  const records: Array<Record<string, unknown>> = [];
+  let page = 0;
+  let totalElements = 0;
+  let last = false;
+
+  while (records.length < maxResults && !last) {
+    const remaining = maxResults - records.length;
+    const body = {
+      account: params.account ?? {},
+      lookalikeDomains: params.lookalikeDomains ?? [],
+      lists: params.lists,
+      page,
+      size: Math.min(pageSize, remaining),
+    };
+    const res = await fetch(`${API_BASE}/companies`, {
+      method: 'POST',
+      headers: headers(),
+      body: JSON.stringify(body),
+      signal: AbortSignal.timeout(30_000),
+    });
+    const data = await jsonOrThrow<{
+      content?: Array<Record<string, unknown>>;
+      totalElements?: number;
+      last?: boolean;
+    }>(res, 'searchCompanies');
+    const batch = data.content ?? [];
+    records.push(...batch);
+    totalElements = data.totalElements ?? totalElements;
+    last = !!data.last || batch.length === 0;
+    page += 1;
+    if (batch.length === 0) break;
+  }
+
+  return { records: records.slice(0, maxResults), totalElements };
 }
 ```
 
 - [ ] **Step 4: Run tests to verify they pass**
 
 ```bash
+cd /Users/matt/Documents/coldcrafthq
 npx vitest run src/lib/sources/__tests__/ai-ark.test.ts
 ```
 
-Expected: all 4 tests PASS.
+Expected: all 7 tests PASS.
 
 - [ ] **Step 5: Commit**
 
 ```bash
 git add src/lib/sources/ai-ark.ts src/lib/sources/__tests__/ai-ark.test.ts
-git commit -m "feat(sources): add AI Ark B2B data API client"
+git commit -m "feat(sources): add AI Ark client (searchPeople/exportPeople/credits)
+
+Co-Authored-By: Claude Opus 4.7 <noreply@anthropic.com>"
 ```
 
 ---
@@ -307,7 +585,7 @@ git commit -m "feat(sources): add AI Ark B2B data API client"
 **Files:**
 - Create: `scripts/campaigns/ai-ark-cli.ts`
 
-Why: existing campaign orchestration is Python. Rather than reimplement the AI Ark client in Python, wrap the TS client in a CLI so Python scripts invoke it via subprocess.
+Multi-command CLI so Python scripts can invoke any of the 6 AI Ark primitives via subprocess. Commands: `credits`, `search-people`, `export-people`, `poll-export`, `fetch-export`.
 
 - [ ] **Step 1: Write the CLI**
 
@@ -315,84 +593,192 @@ Create `scripts/campaigns/ai-ark-cli.ts`:
 
 ```typescript
 #!/usr/bin/env tsx
-// Usage:
-//   tsx scripts/campaigns/ai-ark-cli.ts --params-file=path/to/params.json --out=path/to/raw.csv
-//
-// Reads a JSON file matching AIArkSearchParams, pulls leads from AI Ark,
-// writes a CSV (header row + one row per lead) to --out.
+// Multi-command CLI wrapping the AI Ark TS client.
+// Usage examples:
+//   tsx ai-ark-cli.ts credits
+//   tsx ai-ark-cli.ts search-people --params=path/to/params.json --out=path/to/metadata.csv
+//   tsx ai-ark-cli.ts export-people --params=path/to/params.json --webhook=https://noop.example.com/wh
+//   tsx ai-ark-cli.ts poll-export --track-id=<trackId>
+//   tsx ai-ark-cli.ts fetch-export --track-id=<trackId> --out=path/to/verified.csv
 import { readFileSync, writeFileSync } from 'node:fs';
-import { searchLeads, type AIArkSearchParams, type AIArkLead } from '../../src/lib/sources/ai-ark';
+import {
+  getCredits, searchPeople, exportPeopleWithEmail,
+  getExportStatistics, getExportInquiries,
+  type AIArkPersonRecord,
+  type AIArkExportInquiryRecord,
+} from '../../src/lib/sources/ai-ark';
 
-function arg(name: string): string {
+function arg(name: string, required = true): string | undefined {
   const found = process.argv.find(a => a.startsWith(`--${name}=`));
-  if (!found) throw new Error(`Missing --${name}=`);
+  if (!found) {
+    if (required) throw new Error(`Missing --${name}=`);
+    return undefined;
+  }
   return found.split('=', 2)[1];
 }
 
-function toCsv(leads: AIArkLead[]): string {
-  if (leads.length === 0) return '';
-  // Stable column order — extra unknown keys appended alphabetically.
-  const preferred = ['email', 'first_name', 'last_name', 'title', 'company_name',
-    'company_domain', 'company_industry', 'company_headcount', 'company_location', 'linkedin_url'];
-  const allKeys = new Set<string>();
-  leads.forEach(l => Object.keys(l).forEach(k => allKeys.add(k)));
-  const cols = [...preferred.filter(k => allKeys.has(k)),
-    ...[...allKeys].filter(k => !preferred.includes(k)).sort()];
+function escape(v: unknown): string {
+  if (v == null) return '';
+  const s = String(v);
+  return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
+}
 
-  const escape = (v: unknown) => {
-    if (v == null) return '';
-    const s = String(v);
-    return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
+// Flatten a person record into a single CSV row with stable columns.
+function personRow(r: AIArkPersonRecord): Record<string, string> {
+  const cur = r.position_groups?.[0]?.company;
+  const curPos = r.position_groups?.[0]?.profile_positions?.[0];
+  return {
+    aiark_person_id: String(r.id ?? ''),
+    first_name: String(r.profile?.first_name ?? ''),
+    last_name: String(r.profile?.last_name ?? ''),
+    full_name: String(r.profile?.full_name ?? ''),
+    title: String(curPos?.title ?? r.profile?.title ?? ''),
+    headline: String(r.profile?.headline ?? ''),
+    linkedin_url: String(r.link?.linkedin ?? ''),
+    company_name: String(cur?.name ?? ''),
+    aiark_company_id: String(cur?.id ?? ''),
+    company_linkedin_url: String(cur?.url ?? ''),
+    company_headcount_start: String(cur?.employees?.start ?? ''),
+    company_headcount_end: String(cur?.employees?.end ?? ''),
+    company_industry: String(r.industry ?? ''),
+    person_country: String(r.location?.country ?? ''),
+    person_state: String(r.location?.state ?? ''),
+    person_city: String(r.location?.city ?? ''),
+    seniority: String(r.department?.seniority ?? ''),
   };
+}
 
+function rowsToCsv(rows: Array<Record<string, string>>): string {
+  if (rows.length === 0) return '';
+  const cols = Object.keys(rows[0]);
   const header = cols.join(',');
-  const rows = leads.map(l => cols.map(c => escape(l[c])).join(','));
-  return [header, ...rows].join('\n') + '\n';
+  const body = rows.map(r => cols.map(c => escape(r[c])).join(',')).join('\n');
+  return header + '\n' + body + '\n';
+}
+
+async function cmdCredits() {
+  const c = await getCredits();
+  console.log(JSON.stringify(c));
+}
+
+async function cmdSearchPeople() {
+  const paramsPath = arg('params')!;
+  const outPath = arg('out')!;
+  const params = JSON.parse(readFileSync(paramsPath, 'utf8'));
+  const result = await searchPeople(params);
+  const rows = result.records.map(personRow);
+  writeFileSync(outPath, rowsToCsv(rows));
+  console.error(JSON.stringify({
+    wrote: rows.length, totalElements: result.totalElements,
+    trackId: result.trackId, out: outPath,
+  }));
+  // Also emit trackId on stdout (single line) so Python can capture it
+  if (result.trackId) console.log(result.trackId);
+}
+
+async function cmdExportPeople() {
+  const paramsPath = arg('params')!;
+  const webhook = arg('webhook')!;
+  const params = JSON.parse(readFileSync(paramsPath, 'utf8'));
+  const trackId = await exportPeopleWithEmail(params, webhook);
+  console.log(trackId);
+}
+
+async function cmdPollExport() {
+  const trackId = arg('track-id')!;
+  const stats = await getExportStatistics(trackId);
+  console.log(JSON.stringify(stats));
+}
+
+// Flatten an inquiry record into a row joining input + first VALID output.
+function inquiryRow(i: AIArkExportInquiryRecord): Record<string, string> | null {
+  const valid = i.output.find(o => o.status === 'VALID');
+  if (!valid) return null;
+  return {
+    refId: String(i.refId ?? ''),
+    state: String(i.state ?? ''),
+    email: String(valid.address ?? ''),
+    email_status: String(valid.status ?? ''),
+    email_substatus: String(valid.subStatus ?? ''),
+    email_domain_type: String(valid.domainType ?? ''),
+    first_name: String(i.input.firstname ?? ''),
+    last_name: String(i.input.lastname ?? ''),
+    company_domain: String(i.input.domain ?? ''),
+  };
+}
+
+async function cmdFetchExport() {
+  const trackId = arg('track-id')!;
+  const outPath = arg('out')!;
+  const all: Array<Record<string, string>> = [];
+  let page = 0;
+  while (true) {
+    const data = await getExportInquiries(trackId, page, 100);
+    for (const item of data.content ?? []) {
+      const r = inquiryRow(item);
+      if (r) all.push(r);
+    }
+    if (page + 1 >= (data.totalPages ?? 1)) break;
+    page += 1;
+  }
+  writeFileSync(outPath, rowsToCsv(all));
+  console.log(JSON.stringify({ wrote: all.length, out: outPath }));
 }
 
 async function main() {
-  const paramsPath = arg('params-file');
-  const outPath = arg('out');
-  const params: AIArkSearchParams = JSON.parse(readFileSync(paramsPath, 'utf8'));
-  const leads = await searchLeads(params);
-  writeFileSync(outPath, toCsv(leads));
-  console.log(`Wrote ${leads.length} leads to ${outPath}`);
+  const cmd = process.argv[2];
+  switch (cmd) {
+    case 'credits':       return cmdCredits();
+    case 'search-people': return cmdSearchPeople();
+    case 'export-people': return cmdExportPeople();
+    case 'poll-export':   return cmdPollExport();
+    case 'fetch-export':  return cmdFetchExport();
+    default:
+      console.error(`Unknown command: ${cmd}`);
+      console.error('Usage: ai-ark-cli.ts <credits|search-people|export-people|poll-export|fetch-export> [--flags...]');
+      process.exit(2);
+  }
 }
 
 main().catch(e => { console.error(e); process.exit(1); });
 ```
 
-- [ ] **Step 2: Verify the CLI builds (no test against live API yet)**
+- [ ] **Step 2: Type-check the CLI**
 
 ```bash
-npx tsx --noExecute scripts/campaigns/ai-ark-cli.ts 2>&1 || true
-# If --noExecute is unsupported, just type-check:
+cd /Users/matt/Documents/coldcrafthq
 npx tsc --noEmit scripts/campaigns/ai-ark-cli.ts src/lib/sources/ai-ark.ts
 ```
 
-Expected: no TypeScript errors. (Runtime invocation deferred to Tasks 4-5.)
+Expected: no TypeScript errors.
 
 - [ ] **Step 3: Commit**
 
 ```bash
 git add scripts/campaigns/ai-ark-cli.ts
-git commit -m "feat(campaigns): add ai-ark-cli wrapper for Python orchestration"
+git commit -m "feat(campaigns): add ai-ark-cli (search/export/poll/fetch/credits)
+
+Co-Authored-By: Claude Opus 4.7 <noreply@anthropic.com>"
 ```
 
 ---
 
-## Task 4: Smoke-test against live AI Ark API with a tiny pull
+## Task 4: Smoke-test against live AI Ark API
 
 **Files:**
 - Create: `data/niche-2026/smoke-test-params.json`
 
-- [ ] **Step 1: Add AI Ark key to env file**
+This task validates the new client/CLI against the real API with the cheapest possible probes: a credits read (free) and a `size:5` `/people` metadata search (free, no credit cost — emails aren't returned by this endpoint).
 
-Append to `/Users/matt/Documents/coldcrafthq/.env.prod`:
+- [ ] **Step 1: Confirm AI Ark key already in env file**
 
+Verify (the key was added in Task 1's env work):
+
+```bash
+grep '^AI_ARK_API=' /Users/matt/Documents/coldcrafthq/.env.prod
 ```
-AI_ARK_API=684348122e804576a29bcecadaf3da5b
-```
+
+Expected: `AI_ARK_API=684348122e804576a29bcecadaf3da5b`. If missing, append it.
 
 - [ ] **Step 2: Add data dir to .gitignore**
 
@@ -408,52 +794,80 @@ Then create the dir:
 mkdir -p /Users/matt/Documents/coldcrafthq/data/niche-2026
 ```
 
-- [ ] **Step 3: Write tiny smoke-test params**
+- [ ] **Step 3: Verify credits endpoint (free read)**
+
+```bash
+cd /Users/matt/Documents/coldcrafthq
+set -a && source .env.prod && set +a
+npx tsx scripts/campaigns/ai-ark-cli.ts credits
+```
+
+Expected: JSON like `{"total":5099.4}`. Record the current balance — this is what Task 10 will spend against.
+
+- [ ] **Step 4: Write tiny smoke-test params (real /people schema)**
 
 Create `data/niche-2026/smoke-test-params.json`:
 
 ```json
 {
-  "industries": ["Staffing & Recruiting"],
-  "headcount_min": 5,
-  "headcount_max": 75,
-  "geo": ["US", "CA"],
-  "titles": ["Managing Partner", "Founder"],
-  "excluded_titles": ["Recruiter", "Sourcer"],
-  "limit": 10
+  "account": {
+    "industry": ["staffing and recruiting"],
+    "employeeSize": { "type": "RANGE", "range": [{ "start": 5, "end": 75 }] },
+    "location": { "country": ["United States", "Canada"] }
+  },
+  "contact": {
+    "current_position": {
+      "titles": ["Managing Partner", "Founder", "Founding Partner"]
+    }
+  },
+  "size": 5,
+  "maxResults": 5
 }
 ```
 
-- [ ] **Step 4: Run the smoke test**
+- [ ] **Step 5: Run the metadata smoke test**
 
 ```bash
 cd /Users/matt/Documents/coldcrafthq
 set -a && source .env.prod && set +a
-npx tsx scripts/campaigns/ai-ark-cli.ts \
-  --params-file=data/niche-2026/smoke-test-params.json \
-  --out=data/niche-2026/smoke-test.csv
+npx tsx scripts/campaigns/ai-ark-cli.ts search-people \
+  --params=data/niche-2026/smoke-test-params.json \
+  --out=data/niche-2026/smoke-test.csv 2>&1
 ```
 
-Expected: `Wrote 10 leads to data/niche-2026/smoke-test.csv` (or fewer if the filter is too tight). Open the CSV — confirm columns include email, first_name, company_name, title at minimum.
+Expected: stderr line `{"wrote":5,"totalElements":N,"trackId":"<uuid>","out":"..."}` and stdout: a single trackId line.
 
-- [ ] **Step 5: Inspect & sanity-check**
+- [ ] **Step 6: Inspect output**
 
 ```bash
-head -3 data/niche-2026/smoke-test.csv
+head -2 data/niche-2026/smoke-test.csv
 wc -l data/niche-2026/smoke-test.csv
 ```
 
-Expected: header + 10 rows. If 0 rows or all `null`s, return to Task 1 and re-verify the API contract.
+Expected:
+- Header includes `first_name, last_name, title, company_name, company_industry, person_country, linkedin_url, aiark_person_id`
+- 6 lines total (1 header + 5 rows)
+- Rows are real recruiting-firm partners/founders in US/CA
+
+- [ ] **Step 7: Re-check credits did NOT decrement (metadata search is free)**
+
+```bash
+npx tsx scripts/campaigns/ai-ark-cli.ts credits
+```
+
+Expected: same balance as Step 3. If it dropped, something is wrong — STOP and investigate. The `/people` endpoint should never charge credits.
 
 No commit — smoke artifact is gitignored.
 
 ---
 
-## Task 5: Pull retained-recruiters list (5K leads, ICP-1)
+## Task 5: Pull retained-recruiters METADATA from AI Ark `/people` (ICP-1, free)
 
 **Files:**
 - Create: `scripts/campaigns/ai-ark-pull-retained-recruiters.py`
 - Create: `data/niche-2026/params-retained-recruiters.json`
+
+This pull is **free** — `/people` returns metadata (name, title, company, LinkedIn, industry, location) with no emails and no credit cost. Emails come later in Task 10 only for the Tier A+B survivors.
 
 - [ ] **Step 1: Write the params file**
 
@@ -461,34 +875,40 @@ Create `data/niche-2026/params-retained-recruiters.json`:
 
 ```json
 {
-  "industries": [
-    "Staffing & Recruiting",
-    "Executive Search",
-    "Human Resources Services"
-  ],
-  "headcount_min": 5,
-  "headcount_max": 75,
-  "geo": ["US", "CA"],
-  "titles": [
-    "Managing Partner",
-    "Founder",
-    "Founding Partner",
-    "Managing Director",
-    "President",
-    "Practice Lead",
-    "VP Business Development",
-    "Vice President Business Development"
-  ],
-  "excluded_titles": [
-    "Recruiter",
-    "Sourcer",
-    "Talent Coordinator",
-    "Researcher",
-    "Intern"
-  ],
-  "limit": 5000
+  "account": {
+    "industry": [
+      "staffing and recruiting",
+      "executive search",
+      "human resources services"
+    ],
+    "employeeSize": {
+      "type": "RANGE",
+      "range": [{ "start": 5, "end": 75 }]
+    },
+    "location": {
+      "country": ["United States", "Canada"]
+    }
+  },
+  "contact": {
+    "current_position": {
+      "titles": [
+        "Managing Partner",
+        "Founder",
+        "Founding Partner",
+        "Managing Director",
+        "President",
+        "Practice Lead",
+        "VP Business Development",
+        "Vice President Business Development"
+      ]
+    }
+  },
+  "size": 100,
+  "maxResults": 5000
 }
 ```
+
+> Note: AI Ark's `/people` filter shape doesn't expose excluded_titles natively. Filter excluded titles (Recruiter, Sourcer, etc.) post-pull via the niche_scoring module in Task 8 — those titles already return 0 score (hard gate).
 
 - [ ] **Step 2: Write the Python wrapper**
 
@@ -496,8 +916,10 @@ Create `scripts/campaigns/ai-ark-pull-retained-recruiters.py`:
 
 ```python
 #!/usr/bin/env python3
-"""Pull 5K retained-executive-search leads from AI Ark (US+CA).
-Wraps ai-ark-cli.ts; verification is skipped (handled later by MillionVerifier).
+"""Stage 1 (recruiters): pull up to 5K METADATA records from AI Ark /people.
+No credits spent (no emails returned). Output is a CSV of person metadata
+joined with current-company metadata, ready for signal enrichment (Task 7)
+and scoring (Task 9). Emails are fetched in Task 10 for survivors only.
 """
 import os
 import subprocess
@@ -505,11 +927,9 @@ import sys
 
 ROOT = os.path.expanduser('~/Documents/coldcrafthq')
 PARAMS = f'{ROOT}/data/niche-2026/params-retained-recruiters.json'
-OUT = f'{ROOT}/data/niche-2026/raw-ai-ark-recruiters.csv'
+OUT = f'{ROOT}/data/niche-2026/metadata-recruiters.csv'
 
-def main() -> int:
-    os.chdir(ROOT)
-    # Load env from .env.prod into subprocess
+def load_env() -> dict:
     env = os.environ.copy()
     with open(f'{ROOT}/.env.prod') as f:
         for line in f:
@@ -517,10 +937,18 @@ def main() -> int:
             if line and not line.startswith('#') and '=' in line:
                 k, v = line.split('=', 1)
                 env[k] = v.strip('"').strip("'")
-    cmd = ['npx', 'tsx', 'scripts/campaigns/ai-ark-cli.ts',
-           f'--params-file={PARAMS}', f'--out={OUT}']
+    return env
+
+def main() -> int:
+    os.chdir(ROOT)
+    env = load_env()
+    cmd = ['npx', 'tsx', 'scripts/campaigns/ai-ark-cli.ts', 'search-people',
+           f'--params={PARAMS}', f'--out={OUT}']
     print(f'Running: {" ".join(cmd)}')
-    result = subprocess.run(cmd, env=env)
+    result = subprocess.run(cmd, env=env, capture_output=True, text=True)
+    # The CLI prints the trackId on stdout and a JSON summary on stderr.
+    sys.stdout.write(result.stdout)
+    sys.stderr.write(result.stderr)
     return result.returncode
 
 if __name__ == '__main__':
@@ -534,34 +962,47 @@ cd /Users/matt/Documents/coldcrafthq
 python3 scripts/campaigns/ai-ark-pull-retained-recruiters.py
 ```
 
-Expected: `Wrote ~5000 leads to data/niche-2026/raw-ai-ark-recruiters.csv` (could be fewer if AI Ark's universe for this ICP is tight — that's still acceptable).
+Expected: stderr summary `{"wrote":<N>,"totalElements":<universe>,"trackId":"...","out":"..."}` with N up to 5,000. Universe size for retained recruiters at this filter is likely 8K-30K — anything between 500 and 5,000 returned is acceptable.
 
 - [ ] **Step 4: Verify the output**
 
 ```bash
-wc -l data/niche-2026/raw-ai-ark-recruiters.csv
-head -2 data/niche-2026/raw-ai-ark-recruiters.csv
+wc -l data/niche-2026/metadata-recruiters.csv
+head -2 data/niche-2026/metadata-recruiters.csv
 ```
 
-Expected: 1 header row + N data rows where N is between 500 and 5001. If N is <500, the ICP-1 filters are too tight — open `params-retained-recruiters.json` and relax (e.g., drop "Practice Lead" requirement or widen headcount to 5-100).
+Expected: 1 header row + N data rows. If N < 300, the ICP-1 filters are too tight — open the params JSON and relax (drop "Practice Lead", widen headcount to 5-100, add another industry term). If totalElements < 500 too, ICP is genuinely tiny — re-evaluate the spec with the user.
 
-- [ ] **Step 5: Commit the pull script + params**
+- [ ] **Step 5: Re-check credits did NOT change**
+
+```bash
+set -a && source .env.prod && set +a
+npx tsx scripts/campaigns/ai-ark-cli.ts credits
+```
+
+Expected: same balance as before this task. If it dropped, STOP — `/people` should never spend credits. Open an issue.
+
+- [ ] **Step 6: Commit the script + params**
 
 ```bash
 git add scripts/campaigns/ai-ark-pull-retained-recruiters.py \
         data/niche-2026/params-retained-recruiters.json
-git commit -m "feat(campaigns): pull retained recruiters from AI Ark (ICP-1)"
+git commit -m "feat(campaigns): Stage 1 metadata pull for retained recruiters (ICP-1)
+
+Co-Authored-By: Claude Opus 4.7 <noreply@anthropic.com>"
 ```
 
 (The CSV itself is gitignored.)
 
 ---
 
-## Task 6: Pull specialist-agencies list (5K leads, ICP-2)
+## Task 6: Pull specialist-agencies METADATA from AI Ark `/people` (ICP-2, free)
 
 **Files:**
 - Create: `scripts/campaigns/ai-ark-pull-specialist-agencies.py`
 - Create: `data/niche-2026/params-specialist-agencies.json`
+
+Same shape as Task 5: free `/people` metadata pull, no credits spent, no emails yet. Specialist filtering (PR / RevOps / lifecycle / etc.) lives in the niche_scoring module (Task 8) — AI Ark doesn't expose keyword whitelist on `/people` directly, so we pull broad-industry candidates and let the scoring matrix do the specialist cut.
 
 - [ ] **Step 1: Write the params file**
 
@@ -569,70 +1010,51 @@ Create `data/niche-2026/params-specialist-agencies.json`:
 
 ```json
 {
-  "industries": [
-    "Public Relations",
-    "Marketing & Advertising",
-    "Management Consulting",
-    "Professional Services"
-  ],
-  "industry_keywords_whitelist": [
-    "PR agency",
-    "public relations",
-    "revops",
-    "revenue operations",
-    "lifecycle marketing",
-    "CRM agency",
-    "demand generation",
-    "performance marketing",
-    "paid media",
-    "B2B content",
-    "sales enablement",
-    "ABM agency",
-    "account-based marketing",
-    "fractional CMO"
-  ],
-  "industry_keywords_blacklist": [
-    "design studio",
-    "web design",
-    "dev shop",
-    "software development",
-    "branding studio"
-  ],
-  "headcount_min": 5,
-  "headcount_max": 50,
-  "geo": ["US", "CA"],
-  "titles": [
-    "Founder",
-    "CEO",
-    "Managing Director",
-    "Managing Partner",
-    "Head of New Business",
-    "Head of Growth",
-    "COO",
-    "Chief Operating Officer"
-  ],
-  "excluded_titles": [
-    "Account Manager",
-    "Account Executive",
-    "Strategist",
-    "Designer",
-    "Copywriter",
-    "Coordinator"
-  ],
-  "limit": 5000
+  "account": {
+    "industry": [
+      "public relations and communications",
+      "marketing services",
+      "advertising services",
+      "management consulting"
+    ],
+    "employeeSize": {
+      "type": "RANGE",
+      "range": [{ "start": 5, "end": 50 }]
+    },
+    "location": {
+      "country": ["United States", "Canada"]
+    }
+  },
+  "contact": {
+    "current_position": {
+      "titles": [
+        "Founder",
+        "CEO",
+        "Managing Director",
+        "Managing Partner",
+        "Head of New Business",
+        "Head of Growth",
+        "COO",
+        "Chief Operating Officer"
+      ]
+    }
+  },
+  "size": 100,
+  "maxResults": 5000
 }
 ```
 
-> NOTE: `industry_keywords_whitelist` / `_blacklist` only apply if AI Ark supports keyword filters (confirm from Task 1). If not supported, drop those keys and filter post-pull in Task 6 Step 3 below.
+> The 4 broad industry codes cast wide. The niche_scoring module (Task 8) applies the agency-specialism cut via the `AGENCY_ICP.industry_match_keywords` whitelist (PR / RevOps / lifecycle / demand-gen / performance / B2B content / sales enablement / ABM / fractional CMO) AND the `industry_blacklist` (design studios / dev shops / branding studios). Anything not matching the whitelist falls below 90 score and out of Tier A; anything in the blacklist gets 0.
 
 - [ ] **Step 2: Write the Python wrapper**
 
-Create `scripts/campaigns/ai-ark-pull-specialist-agencies.py` (same shape as Task 5, swap paths):
+Create `scripts/campaigns/ai-ark-pull-specialist-agencies.py`:
 
 ```python
 #!/usr/bin/env python3
-"""Pull 5K specialist B2B agency leads from AI Ark (US+CA).
-Whitelist/blacklist keywords narrow generic agency industries to specialist sub-segments.
+"""Stage 1 (agencies): pull up to 5K METADATA records from AI Ark /people.
+Casts wide on industry; specialist filtering happens in scoring (Task 9).
+No credits spent.
 """
 import os
 import subprocess
@@ -640,10 +1062,9 @@ import sys
 
 ROOT = os.path.expanduser('~/Documents/coldcrafthq')
 PARAMS = f'{ROOT}/data/niche-2026/params-specialist-agencies.json'
-OUT = f'{ROOT}/data/niche-2026/raw-ai-ark-agencies.csv'
+OUT = f'{ROOT}/data/niche-2026/metadata-agencies.csv'
 
-def main() -> int:
-    os.chdir(ROOT)
+def load_env() -> dict:
     env = os.environ.copy()
     with open(f'{ROOT}/.env.prod') as f:
         for line in f:
@@ -651,68 +1072,58 @@ def main() -> int:
             if line and not line.startswith('#') and '=' in line:
                 k, v = line.split('=', 1)
                 env[k] = v.strip('"').strip("'")
-    cmd = ['npx', 'tsx', 'scripts/campaigns/ai-ark-cli.ts',
-           f'--params-file={PARAMS}', f'--out={OUT}']
+    return env
+
+def main() -> int:
+    os.chdir(ROOT)
+    env = load_env()
+    cmd = ['npx', 'tsx', 'scripts/campaigns/ai-ark-cli.ts', 'search-people',
+           f'--params={PARAMS}', f'--out={OUT}']
     print(f'Running: {" ".join(cmd)}')
-    result = subprocess.run(cmd, env=env)
+    result = subprocess.run(cmd, env=env, capture_output=True, text=True)
+    sys.stdout.write(result.stdout)
+    sys.stderr.write(result.stderr)
     return result.returncode
 
 if __name__ == '__main__':
     sys.exit(main())
 ```
 
-- [ ] **Step 3: Run it (+ post-filter if AI Ark lacks keyword filters)**
+- [ ] **Step 3: Run it**
 
 ```bash
 cd /Users/matt/Documents/coldcrafthq
 python3 scripts/campaigns/ai-ark-pull-specialist-agencies.py
 ```
 
-If AI Ark ignored the whitelist/blacklist, post-filter on company description/industry text. Add this to `ai-ark-pull-specialist-agencies.py` (after the subprocess call) BEFORE running:
-
-```python
-# Post-filter (only needed if AI Ark didn't apply whitelist/blacklist)
-import csv, json
-with open(PARAMS) as f:
-    p = json.load(f)
-whitelist = [k.lower() for k in p.get('industry_keywords_whitelist', [])]
-blacklist = [k.lower() for k in p.get('industry_keywords_blacklist', [])]
-
-if whitelist or blacklist:
-    rows = []
-    with open(OUT, newline='') as f:
-        reader = csv.DictReader(f)
-        for r in reader:
-            blob = ' '.join(str(v or '').lower() for k, v in r.items()
-                            if k in ('company_industry', 'company_name', 'title'))
-            if whitelist and not any(w in blob for w in whitelist):
-                continue
-            if blacklist and any(b in blob for b in blacklist):
-                continue
-            rows.append(r)
-    if rows:
-        with open(OUT, 'w', newline='') as f:
-            w = csv.DictWriter(f, fieldnames=list(rows[0].keys()))
-            w.writeheader()
-            w.writerows(rows)
-        print(f'Post-filtered to {len(rows)} specialist agencies')
-```
+Expected: stderr summary `{"wrote":<N>,...}` with N up to 5,000. The 4 broad industries should easily hit 5K total; if N < 1000, widen the industry list further.
 
 - [ ] **Step 4: Verify the output**
 
 ```bash
-wc -l data/niche-2026/raw-ai-ark-agencies.csv
-head -2 data/niche-2026/raw-ai-ark-agencies.csv
+wc -l data/niche-2026/metadata-agencies.csv
+head -2 data/niche-2026/metadata-agencies.csv
 ```
 
-Expected: header + 500-5000 rows. If <500 after post-filtering, loosen whitelist.
+Expected: 1 header row + N data rows.
 
-- [ ] **Step 5: Commit**
+- [ ] **Step 5: Re-check credits**
+
+```bash
+set -a && source .env.prod && set +a
+npx tsx scripts/campaigns/ai-ark-cli.ts credits
+```
+
+Expected: same balance as before this task. If it dropped, STOP.
+
+- [ ] **Step 6: Commit**
 
 ```bash
 git add scripts/campaigns/ai-ark-pull-specialist-agencies.py \
         data/niche-2026/params-specialist-agencies.json
-git commit -m "feat(campaigns): pull specialist B2B agencies from AI Ark (ICP-2)"
+git commit -m "feat(campaigns): Stage 1 metadata pull for specialist agencies (ICP-2)
+
+Co-Authored-By: Claude Opus 4.7 <noreply@anthropic.com>"
 ```
 
 ---
@@ -722,7 +1133,11 @@ git commit -m "feat(campaigns): pull specialist B2B agencies from AI Ark (ICP-2)
 **Files:**
 - Create: `scripts/campaigns/enrich-signals-niche-2026.py`
 
-This script reads the two raw CSVs, calls existing signal modules per company, and appends 4 new columns: `signal_job_post_hit`, `signal_job_post_role`, `signal_headcount_delta_yoy`, `signal_headcount_hit`.
+This script reads the two metadata CSVs from Tasks 5-6, calls existing signal modules per company, and appends 4 new columns: `signal_job_post_hit`, `signal_job_post_role`, `signal_headcount_delta_yoy`, `signal_headcount_hit`.
+
+**Important column-name notes for the new metadata schema:**
+- The metadata CSV does NOT contain `company_domain` (emails + domains come later in Task 10). Dedupe per-company calls by `aiark_company_id` instead.
+- For signal modules that require a domain input, derive one from `company_linkedin_url` (parse the LinkedIn slug) OR look up the company via `searchCompanies` for the few hundred unique company IDs we need to enrich — but only if the existing signal modules can't accept a LinkedIn URL. Inspect first (Step 1 below).
 
 - [ ] **Step 1: Inspect existing signal modules**
 
@@ -769,13 +1184,13 @@ ROOT = os.path.expanduser('~/Documents/coldcrafthq')
 
 INPUTS = [
     {
-        'in':  f'{ROOT}/data/niche-2026/raw-ai-ark-recruiters.csv',
+        'in':  f'{ROOT}/data/niche-2026/metadata-recruiters.csv',
         'out': f'{ROOT}/data/niche-2026/signal-enriched-recruiters.csv',
         'job_role_keywords': ['business development', 'partner',
                               'director of business development'],
     },
     {
-        'in':  f'{ROOT}/data/niche-2026/raw-ai-ark-agencies.csv',
+        'in':  f'{ROOT}/data/niche-2026/metadata-agencies.csv',
         'out': f'{ROOT}/data/niche-2026/signal-enriched-agencies.csv',
         'job_role_keywords': ['account executive', 'account director',
                               'senior strategist'],
@@ -792,22 +1207,24 @@ def load_env() -> Dict[str, str]:
                 env[k] = v.strip('"').strip("'")
     return env
 
-def call_signals_cli(domain: str, role_keywords: list[str], env: Dict[str, str]) -> Dict[str, Any]:
-    """Invoke the signals CLI wrapper for one company. Returns:
+def call_signals_cli(linkedin_url: str, role_keywords: list[str], env: Dict[str, str]) -> Dict[str, Any]:
+    """Invoke the signals CLI wrapper for one company by LinkedIn URL. Returns:
        {job_post_hit: bool, job_post_role: str, headcount_delta_yoy: float | None}
        On error: all defaults (False/empty/None) — never raise per-company.
     """
+    if not linkedin_url:
+        return {'job_post_hit': False, 'job_post_role': '', 'headcount_delta_yoy': None}
     try:
         cmd = ['npx', 'tsx', 'scripts/campaigns/signals-cli.ts',
-               f'--domain={domain}',
+               f'--linkedin-url={linkedin_url}',
                f'--job-keywords={",".join(role_keywords)}']
         r = subprocess.run(cmd, env=env, capture_output=True, text=True, timeout=60)
         if r.returncode != 0:
-            print(f'  [warn] signals-cli {domain}: {r.stderr.strip()[:200]}', file=sys.stderr)
+            print(f'  [warn] signals-cli {linkedin_url}: {r.stderr.strip()[:200]}', file=sys.stderr)
             return {'job_post_hit': False, 'job_post_role': '', 'headcount_delta_yoy': None}
         return json.loads(r.stdout)
     except Exception as e:
-        print(f'  [warn] signals-cli {domain}: {e}', file=sys.stderr)
+        print(f'  [warn] signals-cli {linkedin_url}: {e}', file=sys.stderr)
         return {'job_post_hit': False, 'job_post_role': '', 'headcount_delta_yoy': None}
 
 def enrich(input_path: str, output_path: str, role_keywords: list[str], env: Dict[str, str]) -> None:
@@ -815,19 +1232,29 @@ def enrich(input_path: str, output_path: str, role_keywords: list[str], env: Dic
         rows = list(csv.DictReader(f))
     print(f'Enriching {len(rows)} rows from {input_path}')
 
-    # Dedupe by domain so we only call signals once per company
-    domains = {(r.get('company_domain') or '').strip().lower()
-               for r in rows if r.get('company_domain')}
-    domains.discard('')
-    domain_signals: Dict[str, Dict[str, Any]] = {}
+    # Dedupe by AI Ark company UUID so we only call signals once per company.
+    # (Domain isn't in the metadata; we'd have to enrich it separately.)
+    company_keys = {(r.get('aiark_company_id') or '').strip()
+                    for r in rows if r.get('aiark_company_id')}
+    company_keys.discard('')
+    # For each company UUID, look up its linkedin_url from the first matching row —
+    # the signals-cli should accept either a domain or a LinkedIn URL.
+    key_to_linkedin: Dict[str, str] = {}
+    for r in rows:
+        k = (r.get('aiark_company_id') or '').strip()
+        if k and k not in key_to_linkedin:
+            key_to_linkedin[k] = (r.get('company_linkedin_url') or '').strip()
+
+    company_signals: Dict[str, Dict[str, Any]] = {}
 
     with ThreadPoolExecutor(max_workers=8) as pool:
-        futures = {pool.submit(call_signals_cli, d, role_keywords, env): d for d in domains}
+        futures = {pool.submit(call_signals_cli, key_to_linkedin[k], role_keywords, env): k
+                   for k in company_keys}
         for i, fut in enumerate(as_completed(futures)):
-            d = futures[fut]
-            domain_signals[d] = fut.result()
+            k = futures[fut]
+            company_signals[k] = fut.result()
             if (i + 1) % 50 == 0:
-                print(f'  signal progress: {i + 1}/{len(domains)}')
+                print(f'  signal progress: {i + 1}/{len(company_keys)}')
 
     # Attach signal columns to each row
     fieldnames = list(rows[0].keys()) + [
@@ -835,8 +1262,8 @@ def enrich(input_path: str, output_path: str, role_keywords: list[str], env: Dic
         'signal_headcount_delta_yoy', 'signal_headcount_hit'
     ]
     for r in rows:
-        d = (r.get('company_domain') or '').strip().lower()
-        s = domain_signals.get(d, {})
+        k = (r.get('aiark_company_id') or '').strip()
+        s = company_signals.get(k, {})
         r['signal_job_post_hit']      = '1' if s.get('job_post_hit') else '0'
         r['signal_job_post_role']     = s.get('job_post_role') or ''
         delta = s.get('headcount_delta_yoy')
@@ -1195,6 +1622,8 @@ git commit -m "feat(campaigns): add niche-specific 100pt ICP scoring + tier gate
 **Files:**
 - Create: `scripts/campaigns/score-and-tier-niche-2026.py`
 
+The signal-enriched CSVs from Task 7 use the AI Ark metadata schema: `company_headcount_start`, `company_headcount_end`, `person_country`, etc. The `niche_scoring` module (Task 8) expects canonical names: `company_headcount` (int), `company_location` (string). This orchestrator does the mapping at the boundary so the scoring module stays simple.
+
 - [ ] **Step 1: Write the orchestrator**
 
 Create `scripts/campaigns/score-and-tier-niche-2026.py`:
@@ -1202,7 +1631,15 @@ Create `scripts/campaigns/score-and-tier-niche-2026.py`:
 ```python
 #!/usr/bin/env python3
 """Apply niche-specific scoring and split each signal-enriched CSV
-into Tier A / Tier B segments (drops anything <70)."""
+into Tier A / Tier B segments (drops anything <70).
+
+Adapts the AI Ark metadata column names to the scorer's expected canonical
+column names. Mapping:
+  company_headcount_start (+ _end) -> company_headcount (use start as the
+                                       representative integer)
+  person_country  -> company_location
+  industry        -> company_industry (already canonical)
+"""
 import csv
 import os
 import sys
@@ -1228,6 +1665,21 @@ INPUTS = [
     },
 ]
 
+def normalize_for_scoring(r: dict) -> dict:
+    """Return a SHALLOW-copy of r with the canonical columns the scorer needs.
+    Does NOT mutate r (we keep the rich metadata for downstream)."""
+    n = dict(r)
+    # Headcount: prefer explicit company_headcount, else use start of range
+    if not n.get('company_headcount'):
+        try:
+            n['company_headcount'] = int(r.get('company_headcount_start') or 0)
+        except (TypeError, ValueError):
+            n['company_headcount'] = 0
+    # Location: prefer explicit company_location, else person_country
+    if not n.get('company_location'):
+        n['company_location'] = r.get('person_country') or ''
+    return n
+
 def process(cfg: dict) -> None:
     with open(cfg['in'], newline='') as f:
         rows = list(csv.DictReader(f))
@@ -1236,8 +1688,10 @@ def process(cfg: dict) -> None:
     a_rows, b_rows = [], []
     tier_counts = Counter()
     for r in rows:
-        s = score_lead(r, cfg['icp'])
+        normalized = normalize_for_scoring(r)
+        s = score_lead(normalized, cfg['icp'])
         t = tier_for_score(s)
+        # Annotate the ORIGINAL row (preserving rich metadata) with score + tier
         r['icp_score'] = str(s)
         r['icp_tier']  = t or 'DROP'
         tier_counts[r['icp_tier']] += 1
@@ -1247,6 +1701,8 @@ def process(cfg: dict) -> None:
             b_rows.append(r)
 
     print(f'  Tier A: {tier_counts["A"]}  Tier B: {tier_counts["B"]}  Drop: {tier_counts["DROP"]}')
+    print(f'  Credit cost forecast: ~{tier_counts["A"] + tier_counts["B"]} credits '
+          f'(1 per landed verified email, less BounceBan miss rate ~10-20%)')
 
     for path, rows_out in [(cfg['out_a'], a_rows), (cfg['out_b'], b_rows)]:
         if not rows_out:
@@ -1274,7 +1730,7 @@ cd /Users/matt/Documents/coldcrafthq
 python3 scripts/campaigns/score-and-tier-niche-2026.py
 ```
 
-Expected: each niche prints Tier A / B / Drop counts. Spec target distribution: A ~15-25%, B ~60-70%, Drop ~10-20%.
+Expected: each niche prints Tier A / B / Drop counts AND a credit forecast. Combined credit forecast across both niches should be ≤ remaining credit balance (~5,099 minus a small buffer for misses). If the forecast EXCEEDS the balance, tighten ICP filters in Tasks 5-6 and re-run; do NOT proceed to Task 10.
 
 - [ ] **Step 3: Sanity-check the splits**
 
@@ -1288,106 +1744,75 @@ If Tier A is <5% or >40%, the scoring matrix or signal-enrichment hit rate is of
 
 ```bash
 git add scripts/campaigns/score-and-tier-niche-2026.py
-git commit -m "feat(campaigns): score + tier-split niche-2026 leads"
+git commit -m "feat(campaigns): score + tier-split niche-2026 leads
+
+Co-Authored-By: Claude Opus 4.7 <noreply@anthropic.com>"
 ```
 
 ---
 
-## Task 10: Verify emails + dedupe vs existing 18K universe
+## Task 10: AI Ark export → poll → dedupe (THE credit-spending task)
 
 **Files:**
-- Create: `scripts/campaigns/verify-and-dedupe-niche-2026.py`
+- Create: `scripts/campaigns/aiark-export-and-poll-niche-2026.py`
 
-- [ ] **Step 1: Inspect existing MillionVerifier wiring**
+This is the only step in the entire plan that spends AI Ark credits. Submits 4 export jobs (one per scored tier CSV), polls each to `state=DONE`, fetches the verified-email inquiries pages, joins back to the original tier metadata by `aiark_person_id`, dedupes against the existing 18K universe in `/segmented-lists/`, and writes the 4 final CSVs.
 
-```bash
-grep -rn "MILLIONVERIFIER\|millionverifier\|million-verifier" \
-  /Users/matt/Documents/coldcrafthq/src \
-  /Users/matt/Documents/coldcrafthq/scripts | head -20
-```
+**Pre-flight credit gate:** the script refuses to start if forecasted spend (Task 9 output) exceeds remaining credits.
 
-Record: which existing TS function / CLI / bash script does batch verification.
+**No MillionVerifier:** AI Ark already verifies via BounceBan. Re-running another verifier would be redundant spend.
 
-- [ ] **Step 2: Write the orchestrator**
+- [ ] **Step 1: Write the orchestrator**
 
-Create `scripts/campaigns/verify-and-dedupe-niche-2026.py`:
+Create `scripts/campaigns/aiark-export-and-poll-niche-2026.py`:
 
 ```python
 #!/usr/bin/env python3
-"""Verify scored CSVs via MillionVerifier, dedupe against the existing
-18K-lead universe in /segmented-lists/, and write final 4 CSVs into
-/segmented-lists/ ready for Instantly import."""
+"""Stage 4: spend AI Ark credits to fetch BounceBan-verified emails ONLY for
+Tier A + B survivors. Polls /people/export/{trackId}/statistics until DONE,
+then pages /people/export/{trackId}/inquiries for results. Joins back to the
+scored metadata by aiark_person_id. Dedupes vs the existing 18K-lead universe
+in /segmented-lists/. Writes final CSVs to /segmented-lists/.
+"""
 import csv
 import glob
+import json
 import os
 import subprocess
 import sys
 import time
-from typing import Set
+from typing import Dict, Set
 
 ROOT = os.path.expanduser('~/Documents/coldcrafthq')
 SEG_DIR = f'{ROOT}/segmented-lists'
+DUMMY_WEBHOOK = 'https://webhook.coldcrafthq.com/aiark-noop'  # we poll instead
 
-INPUTS = [
-    (f'{ROOT}/data/niche-2026/scored-recruiters-A.csv',
-     f'{SEG_DIR}/CC-List-RetainedRecruiters-A.csv'),
-    (f'{ROOT}/data/niche-2026/scored-recruiters-B.csv',
-     f'{SEG_DIR}/CC-List-RetainedRecruiters-B.csv'),
-    (f'{ROOT}/data/niche-2026/scored-agencies-A.csv',
-     f'{SEG_DIR}/CC-List-SpecialistAgencies-A.csv'),
-    (f'{ROOT}/data/niche-2026/scored-agencies-B.csv',
-     f'{SEG_DIR}/CC-List-SpecialistAgencies-B.csv'),
+JOBS = [
+    {
+        'scored_csv': f'{ROOT}/data/niche-2026/scored-recruiters-A.csv',
+        'export_csv': f'{ROOT}/data/niche-2026/exported-recruiters-A.csv',
+        'final_csv':  f'{SEG_DIR}/CC-List-RetainedRecruiters-A.csv',
+        'job_label':  'recruiters-A',
+    },
+    {
+        'scored_csv': f'{ROOT}/data/niche-2026/scored-recruiters-B.csv',
+        'export_csv': f'{ROOT}/data/niche-2026/exported-recruiters-B.csv',
+        'final_csv':  f'{SEG_DIR}/CC-List-RetainedRecruiters-B.csv',
+        'job_label':  'recruiters-B',
+    },
+    {
+        'scored_csv': f'{ROOT}/data/niche-2026/scored-agencies-A.csv',
+        'export_csv': f'{ROOT}/data/niche-2026/exported-agencies-A.csv',
+        'final_csv':  f'{SEG_DIR}/CC-List-SpecialistAgencies-A.csv',
+        'job_label':  'agencies-A',
+    },
+    {
+        'scored_csv': f'{ROOT}/data/niche-2026/scored-agencies-B.csv',
+        'export_csv': f'{ROOT}/data/niche-2026/exported-agencies-B.csv',
+        'final_csv':  f'{SEG_DIR}/CC-List-SpecialistAgencies-B.csv',
+        'job_label':  'agencies-B',
+    },
 ]
-
-def existing_emails() -> Set[str]:
-    """Collect all emails already loaded across existing segmented lists."""
-    seen: Set[str] = set()
-    for path in glob.glob(f'{SEG_DIR}/CC-List-*.csv'):
-        # Skip the niche-2026 outputs themselves so we don't dedupe against
-        # a partial run from the same session.
-        if any(path.endswith(out) for _, out in INPUTS):
-            continue
-        with open(path, newline='') as f:
-            for r in csv.DictReader(f):
-                e = (r.get('email') or '').strip().lower()
-                if e:
-                    seen.add(e)
-    print(f'Universe dedupe set: {len(seen)} existing emails')
-    return seen
-
-def verify_csv(in_path: str, env: dict) -> str:
-    """Run MillionVerifier on the email column. Writes a sibling .verified.csv.
-    Implementation depends on Task 10 Step 1 findings — adapt to the existing
-    CLI/wrapper in this codebase. The block below is the standard pattern."""
-    out_path = in_path.replace('.csv', '.verified.csv')
-    # CONFIRM the existing wrapper name/path from Task 10 Step 1.
-    # If a TS verifier CLI exists at scripts/verify-emails.ts:
-    cmd = ['npx', 'tsx', 'scripts/verify-emails.ts',
-           f'--in={in_path}', f'--out={out_path}',
-           '--keep=deliverable,risky']
-    print(f'Verifying {in_path} ...')
-    r = subprocess.run(cmd, env=env, check=True)
-    return out_path
-
-def dedupe_and_write(verified_path: str, final_path: str, seen: Set[str]) -> None:
-    with open(verified_path, newline='') as f:
-        rows = list(csv.DictReader(f))
-    before = len(rows)
-    kept = []
-    for r in rows:
-        e = (r.get('email') or '').strip().lower()
-        if not e or e in seen:
-            continue
-        seen.add(e)
-        kept.append(r)
-    if not kept:
-        print(f'  [warn] all {before} rows deduped against existing universe — nothing to write for {final_path}')
-        return
-    with open(final_path, 'w', newline='') as f:
-        w = csv.DictWriter(f, fieldnames=list(kept[0].keys()))
-        w.writeheader()
-        w.writerows(kept)
-    print(f'  {before} verified → {len(kept)} kept after dedupe → {final_path}')
 
 def load_env() -> dict:
     env = os.environ.copy()
@@ -1399,33 +1824,213 @@ def load_env() -> dict:
                 env[k] = v.strip('"').strip("'")
     return env
 
+def cli(env: dict, *args: str) -> subprocess.CompletedProcess:
+    return subprocess.run(['npx', 'tsx', 'scripts/campaigns/ai-ark-cli.ts', *args],
+                          env=env, capture_output=True, text=True, check=True)
+
+def get_credits(env: dict) -> float:
+    r = cli(env, 'credits')
+    return float(json.loads(r.stdout.strip())['total'])
+
+def forecast_total(jobs) -> int:
+    """Sum of scored rows across all jobs = upper-bound credit spend."""
+    n = 0
+    for j in jobs:
+        if not os.path.exists(j['scored_csv']):
+            continue
+        with open(j['scored_csv'], newline='') as f:
+            n += sum(1 for _ in csv.DictReader(f))
+    return n
+
+def build_export_params(scored_csv: str) -> dict:
+    """Build a /people/export body that targets the EXACT aiark_person_ids
+    in the scored CSV. Per AI Ark docs the `account` filter is required, but
+    we can target a list of person ids via lists.people_id.include if the
+    API supports it; otherwise we re-run the original niche filter and
+    intersect post-fetch. CONFIRM via the api-notes file at runtime.
+    """
+    # The most robust approach is to re-issue the original niche filters
+    # plus a list-include of the specific aiark_person_ids. Read the first
+    # scored row to determine which niche params to use.
+    with open(scored_csv, newline='') as f:
+        rows = list(csv.DictReader(f))
+    if not rows:
+        return {}
+    person_ids = [r['aiark_person_id'] for r in rows if r.get('aiark_person_id')]
+    # Pick params file by tier label embedded in the path
+    if 'recruiters' in scored_csv:
+        params_path = f'{ROOT}/data/niche-2026/params-retained-recruiters.json'
+    else:
+        params_path = f'{ROOT}/data/niche-2026/params-specialist-agencies.json'
+    with open(params_path) as f:
+        params = json.load(f)
+    # Constrain to just our scored survivors:
+    params.setdefault('lists', {})
+    params['lists']['people_id'] = {'include': person_ids}
+    params['size'] = min(len(person_ids), 10000)
+    params['maxResults'] = len(person_ids)
+    return params
+
+def poll_until_done(env: dict, track_id: str, label: str, max_wait_s: int = 3600) -> dict:
+    started = time.time()
+    delay = 30
+    while True:
+        r = cli(env, 'poll-export', f'--track-id={track_id}')
+        stats = json.loads(r.stdout.strip())
+        state = stats.get('state', '')
+        s = stats.get('statistics', {})
+        print(f'  [{label}] state={state} found={s.get("found")}/{s.get("total")} '
+              f'elapsed={int(time.time() - started)}s')
+        if state == 'DONE':
+            return stats
+        if state == 'FAILED':
+            raise RuntimeError(f'export job FAILED: {stats}')
+        if time.time() - started > max_wait_s:
+            raise TimeoutError(f'export job did not reach DONE within {max_wait_s}s')
+        time.sleep(delay)
+        delay = min(delay * 1.5, 120)  # back off to max 2 min
+
+def existing_emails() -> Set[str]:
+    seen: Set[str] = set()
+    skip = {j['final_csv'] for j in JOBS}
+    for path in glob.glob(f'{SEG_DIR}/CC-List-*.csv'):
+        if path in skip:
+            continue
+        try:
+            with open(path, newline='') as f:
+                for r in csv.DictReader(f):
+                    e = (r.get('email') or '').strip().lower()
+                    if e:
+                        seen.add(e)
+        except Exception:
+            continue
+    print(f'Universe dedupe set: {len(seen)} existing emails across '
+          f'{len(glob.glob(f"{SEG_DIR}/CC-List-*.csv")) - len(skip)} segmented lists')
+    return seen
+
+def join_and_dedupe(scored_csv: str, export_csv: str, final_csv: str, seen: Set[str]) -> None:
+    """Left-join exported emails (refId is the aiark_person_id) onto scored rows,
+    then dedupe against the existing universe + within-batch.
+    """
+    with open(scored_csv, newline='') as f:
+        scored = {r['aiark_person_id']: r for r in csv.DictReader(f) if r.get('aiark_person_id')}
+    with open(export_csv, newline='') as f:
+        exports = list(csv.DictReader(f))
+
+    final_rows = []
+    skipped_no_match = 0
+    skipped_no_email = 0
+    skipped_dupe = 0
+    for x in exports:
+        # In the fetch-export CLI output, refId is the AI Ark person id
+        pid = x.get('refId', '').strip()
+        meta = scored.get(pid)
+        if not meta:
+            skipped_no_match += 1
+            continue
+        email = (x.get('email') or '').strip().lower()
+        if not email:
+            skipped_no_email += 1
+            continue
+        if email in seen:
+            skipped_dupe += 1
+            continue
+        seen.add(email)
+        merged = {**meta, **{k: v for k, v in x.items() if k in
+                             ('email', 'email_status', 'email_substatus', 'email_domain_type')}}
+        final_rows.append(merged)
+
+    print(f'  match={len(final_rows)} no_meta={skipped_no_match} '
+          f'no_email={skipped_no_email} dupes={skipped_dupe}')
+
+    if not final_rows:
+        print(f'  [warn] no rows survived for {final_csv}')
+        return
+    with open(final_csv, 'w', newline='') as f:
+        w = csv.DictWriter(f, fieldnames=list(final_rows[0].keys()))
+        w.writeheader()
+        w.writerows(final_rows)
+    print(f'  wrote {len(final_rows)} -> {final_csv}')
+
 def main() -> int:
     os.chdir(ROOT)
     env = load_env()
+
+    # Pre-flight: refuse if forecasted spend exceeds remaining credits.
+    credits = get_credits(env)
+    forecast = forecast_total(JOBS)
+    print(f'\nCredit balance: {credits:.1f}')
+    print(f'Forecasted upper-bound spend (Tier A+B rows): {forecast} credits')
+    if forecast > credits:
+        print(f'\nABORT: forecasted spend exceeds credit balance. '
+              f'Tighten ICPs (Tasks 5-6) or top up credits before re-running.')
+        return 2
+
     seen = existing_emails()
-    for in_path, final_path in INPUTS:
-        if not os.path.exists(in_path):
-            print(f'[skip] {in_path} does not exist')
+
+    # Submit all 4 export jobs first (parallel async), then poll each.
+    track_ids: Dict[str, str] = {}
+    for job in JOBS:
+        if not os.path.exists(job['scored_csv']):
+            print(f"[skip] {job['scored_csv']} missing")
             continue
-        verified = verify_csv(in_path, env)
-        dedupe_and_write(verified, final_path, seen)
-        time.sleep(2)  # polite pause between verifier runs
+        params = build_export_params(job['scored_csv'])
+        if not params:
+            print(f"[skip] {job['job_label']}: no rows to export")
+            continue
+        params_path = job['scored_csv'].replace('.csv', '.export-params.json')
+        with open(params_path, 'w') as f:
+            json.dump(params, f)
+        r = cli(env, 'export-people', f'--params={params_path}', f'--webhook={DUMMY_WEBHOOK}')
+        track_ids[job['job_label']] = r.stdout.strip()
+        print(f"submitted {job['job_label']}: trackId={track_ids[job['job_label']]}")
+
+    # Poll all to DONE
+    for job in JOBS:
+        tid = track_ids.get(job['job_label'])
+        if not tid:
+            continue
+        print(f"\npolling {job['job_label']}...")
+        poll_until_done(env, tid, job['job_label'])
+        # Fetch results
+        cli(env, 'fetch-export', f'--track-id={tid}', f'--out={job["export_csv"]}')
+
+    # Join + dedupe + final-write
+    for job in JOBS:
+        if not os.path.exists(job['export_csv']):
+            continue
+        print(f"\njoining {job['job_label']}...")
+        join_and_dedupe(job['scored_csv'], job['export_csv'], job['final_csv'], seen)
+
+    final_credits = get_credits(env)
+    print(f'\nCredit balance after run: {final_credits:.1f} '
+          f'(spent {credits - final_credits:.1f})')
     return 0
 
 if __name__ == '__main__':
     sys.exit(main())
 ```
 
-- [ ] **Step 3: Run it**
+> **CONFIRM at runtime**: the `lists.people_id.include` filter on `/people/export` works as expected. Task 1's notes documented `exclude` semantics; `include` is plausible but not directly probed. If `include` is unsupported, the fallback is to re-issue the original `/people/export` with niche params and accept that we'll get a superset of survivors (still bounded by credit balance via `size`). Reject duplicates post-fetch.
+
+- [ ] **Step 2: Run it**
 
 ```bash
 cd /Users/matt/Documents/coldcrafthq
-python3 scripts/campaigns/verify-and-dedupe-niche-2026.py
+python3 scripts/campaigns/aiark-export-and-poll-niche-2026.py
 ```
 
-Expected: 4 final CSVs written into `/segmented-lists/`. Per-niche, expect ~80% of Tier-A rows to survive verify+dedupe, ~70% of Tier-B (Tier B has more low-engagement domains).
+Expected:
+- Pre-flight prints credit balance + forecasted spend; aborts if forecast > balance
+- Submits 4 export jobs, prints 4 trackIds
+- Polls each every 30-120s with progress lines
+- Joins back to metadata; prints per-job match/no_email/dupe counts
+- Writes 4 CSVs to `/segmented-lists/`
+- Reports final credit balance
 
-- [ ] **Step 4: Verify final counts**
+Expected runtime: 30 min - 2 hours depending on cohort size and AI Ark queue. Per-niche, expect Tier-A to retain ~80% (smaller cohort, higher-quality LinkedIn presence → better BounceBan hit rate), Tier-B ~65-75%.
+
+- [ ] **Step 3: Verify final counts**
 
 ```bash
 wc -l segmented-lists/CC-List-RetainedRecruiters-A.csv \
@@ -1434,17 +2039,23 @@ wc -l segmented-lists/CC-List-RetainedRecruiters-A.csv \
       segmented-lists/CC-List-SpecialistAgencies-B.csv
 ```
 
-Expected: A-tiers ~500-1000 each, B-tiers ~2000-3500 each.
+At the 5K credit ceiling and the spec's expected tier distribution, target final counts:
+- A-tiers: ~300-600 each
+- B-tiers: ~1,000-1,800 each
 
-- [ ] **Step 5: Commit**
+Total: ~3,000-4,500 verified leads across both niches.
+
+- [ ] **Step 4: Commit**
 
 ```bash
-git add scripts/campaigns/verify-and-dedupe-niche-2026.py \
+git add scripts/campaigns/aiark-export-and-poll-niche-2026.py \
         segmented-lists/CC-List-RetainedRecruiters-A.csv \
         segmented-lists/CC-List-RetainedRecruiters-B.csv \
         segmented-lists/CC-List-SpecialistAgencies-A.csv \
         segmented-lists/CC-List-SpecialistAgencies-B.csv
-git commit -m "feat(campaigns): verify + dedupe niche-2026 final lists"
+git commit -m "feat(campaigns): AI Ark export + poll + dedupe niche-2026 final lists
+
+Co-Authored-By: Claude Opus 4.7 <noreply@anthropic.com>"
 ```
 
 ---

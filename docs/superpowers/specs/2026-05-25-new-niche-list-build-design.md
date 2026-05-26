@@ -14,37 +14,47 @@ Build two untested ColdCraft outbound niches in parallel using AI Ark as a new c
 
 ## Constraints
 
-- **AI Ark plan ceiling:** 10,000 leads total per pull. Skip AI Ark's verification (saves quota for raw leads); use existing MillionVerifier instead.
-- **Geo:** US + Canada (matches AI Ark coverage, top-tier deliverability, single timezone band for sending).
+- **AI Ark credit budget:** 5,099.4 credits remaining as of 2026-05-26 (verified via `/payments/credits`). 1 credit per landed verified email (0.5 enrichment + 0.5 BounceBan verification), 0 credits per unfindable contact. Worst-case ceiling: ~5,099 verified leads total across both niches → ~2,500/niche after dedupe and Drop tier.
+- **AI Ark always verifies emails via BounceBan in real time** — there is no `verify_emails: false` toggle. This means MillionVerifier is no longer needed in the pipeline (would be redundant verification spend). Reacher VPS stays in the pipeline for: (a) sanity-rechecking catch-all results, (b) periodic re-verification before send if a list ages >30 days.
+- **Geo:** US + Canada (matches AI Ark coverage, top-tier deliverability, single timezone band for sending). Filter syntax: `location: { country: ["United States", "Canada"] }`.
 - **Send rules (locked, from V9):** Mon-Fri, 7:00-10:30 AM ET, 30/day per inbox, stop-on-reply, text-only, no link tracking, zero em dashes, zero exclamation marks, spintax format throughout.
 - **Decay-fight:** Re-verify any list older than 30 days; this build is fresh so not yet relevant.
+- **AI Ark async constraints:** People-search `trackId` expires 6 hours, single-use. Email-finder/export require either a public `webhook` URL or polling via `/inquiries`. This plan uses **polling** (one-shot pull, no recurring webhook infra needed).
 
 ## Architecture
 
 ```
-Stage 1 — SOURCE (AI Ark, 10K total)
-  ├─ Pull 1: Retained Recruiters (US+CA, ICP-1 filters)  → 5,000 raw
-  └─ Pull 2: Specialist B2B Agencies (US+CA, ICP-2 filters) → 5,000 raw
+Stage 1 — METADATA SEARCH (AI Ark /people, FREE — no email, no credits)
+  ├─ Pull 1: Retained Recruiters (US+CA, ICP-1 filters)  → up to 5,000 metadata records
+  └─ Pull 2: Specialist B2B Agencies (US+CA, ICP-2 filters) → up to 5,000 metadata records
+     Returns rich profile + company + LinkedIn data. NO emails yet. Cheap iteration here.
 
-Stage 2 — SIGNAL ENRICHMENT (existing modules)
+Stage 2 — SIGNAL ENRICHMENT (existing modules, on metadata only)
   ├─ indeed-jobs scrape: tag company if matching role posted <30d
   └─ Apify LinkedIn headcount: tag if YoY growth threshold met
 
-Stage 3 — SCORE (composite-scorer, 100pt matrix per ICP)
+Stage 3 — SCORE + GATE (composite-scorer + niche_scoring, 100pt matrix per ICP)
   ├─ Tier A: 90-100  (signal-matched)
   ├─ Tier B: 70-89   (firmographic match, no signal)
-  └─ Drop:  <70
+  └─ Drop:  <70 — DISCARDED, never spends a credit
 
-Stage 4 — CLEAN
-  ├─ MillionVerifier: deliverable + risky filter
-  └─ Dedupe vs existing 18,293-lead universe (segment-leads.py pattern)
+Stage 4 — COMMIT CREDITS (AI Ark /people/export, ~1 credit per landed email)
+  Spend BounceBan-verified email credits ONLY on Tier A + B survivors.
+  At 5,099 credit balance, this caps total verified-lead output at ~5,099,
+  realistically ~4,000-4,500 after BounceBan miss rate (10-20% no-find typical).
+  Job is async — POST /people/export with the same filters, poll
+  /people/export/{trackId}/statistics until DONE, then page
+  /people/export/{trackId}/inquiries to collect verified emails.
 
-Stage 5 — SEGMENT + PUSH
-  4 final CSVs → 4 Instantly campaigns:
-    • CC-List-RetainedRecruiters-A   (signal-matched, est. 800-1,200)
-    • CC-List-RetainedRecruiters-B   (firmo only,     est. 3,000-4,000)
-    • CC-List-SpecialistAgencies-A   (signal-matched, est. 800-1,200)
-    • CC-List-SpecialistAgencies-B   (firmo only,     est. 3,000-4,000)
+Stage 5 — DEDUPE + SEGMENT (no separate MillionVerifier step)
+  ├─ Dedupe vs existing 18,293-lead universe (segment-leads.py pattern)
+  ├─ Optional: Reacher VPS spot-check on CATCH_ALL-flagged emails (BounceBan
+  │   marks them via output[].domainType — re-verify these for confidence)
+  └─ 4 final CSVs → 4 Instantly campaigns:
+       • CC-List-RetainedRecruiters-A   (signal-matched, est. 400-700)
+       • CC-List-RetainedRecruiters-B   (firmo only,     est. 1,400-1,900)
+       • CC-List-SpecialistAgencies-A   (signal-matched, est. 400-700)
+       • CC-List-SpecialistAgencies-B   (firmo only,     est. 1,400-1,900)
 
 Stage 6 — LEARN (signal-scoring-feedback, existing loop)
   Tier A vs Tier B reply-rate delta per niche → revises scoring weights
@@ -52,9 +62,11 @@ Stage 6 — LEARN (signal-scoring-feedback, existing loop)
 
 ### Key design decisions
 
+- **Score-before-credit-spend** is the load-bearing change vs the original "source then verify" waterfall. Because AI Ark always verifies, we spend credits only on leads that already pass the 100pt ICP gate. Drop-tier leads cost zero.
+- **Metadata-first iteration is FREE.** We can re-run `/people` with refined filters until we like the cohort before committing to `/people/export`. This is the closest thing AI Ark has to a "dry run."
+- **Polling, not webhooks.** One-shot pull; no need to stand up a public webhook endpoint. Poll `/people/export/{trackId}/statistics` every ~30s until `state=DONE`, then page `/inquiries`.
 - **Orchestration in `/scripts/campaigns/`** matching existing pattern (`segment-new-niches.py`, `setup-plan-campaigns.py`). No new code paths inside `/src/lib/` beyond the AI Ark client.
-- **AI Ark client at `src/lib/sources/ai-ark.ts`** mirrors `src/lib/instantly.ts` structure so future re-pulls reuse it.
-- **Signal enrichment before verification** — never spend MillionVerifier quota on leads that fail scoring.
+- **AI Ark client at `src/lib/sources/ai-ark.ts`** exposes three primitives: `searchCompanies`, `searchPeople` (metadata, no credit cost), `exportPeopleWithEmail` + polling helpers (credit-spending).
 - **Tier A and Tier B as separate Instantly campaigns** — not one campaign with variants. Separate campaigns give cleaner reply-rate attribution per cohort, which is the V10 learning signal.
 
 ## ICP-1: Retained Executive Search / Recruiters (US+CA)
@@ -161,18 +173,19 @@ Intermediate artifacts in `/data/niche-2026/` are first-class — each stage is 
 
 | # | Step | Output | Effort |
 |---|---|---|---|
-| 1 | Write `src/lib/sources/ai-ark.ts` + smoke test against API | Working API wrapper | 2h |
-| 2 | Run `ai-ark-pull-*.py` both niches | 2 raw CSVs (~5K each) | 2h |
-| 3 | Run `enrich-signals-niche-2026.py` | signal-tagged CSVs | 3h (scraper-bound) |
-| 4 | Run `score-and-tier-niche-2026.py` with new ICP configs | 4 tiered CSVs | 1h |
-| 5 | Run `verify-and-dedupe-niche-2026.py` | 4 final CSVs | 3-4h (MillionVerifier-bound) |
-| 6 | Write 4 sequences (validate spintax, no em dashes, no exclamations) | sequence JSONs | 4h |
-| 7 | Run `setup-niche-2026-campaigns.py` | 4 Instantly campaigns created | 30m |
-| 8 | Run `push-niche-2026-leads.py` | leads attached, campaigns paused | 30m |
-| 9 | Manual QA: spot-check 10 leads/campaign, 2 test sends | Pass | 30m |
-| 10 | Unpause campaigns | Live sending | 5m |
+| 1 | Write `src/lib/sources/ai-ark.ts` + smoke test against API | Working API wrapper w/ search + export + polling | 3h |
+| 2 | Run `ai-ark-pull-*.py` both niches (Stage 1 metadata search via `/people`) | 2 metadata CSVs (~5K each, no emails, 0 credit spend) | 1h |
+| 3 | Run `enrich-signals-niche-2026.py` | signal-tagged metadata CSVs | 3h (scraper-bound) |
+| 4 | Run `score-and-tier-niche-2026.py` with new ICP configs | 4 tiered metadata CSVs (Tier A + B per niche) | 1h |
+| 5 | Run `aiark-export-and-poll-niche-2026.py` (Stage 4 credit spend) | 4 verified-email CSVs from BounceBan; credit-balance audit | 2-4h (async, polling-bound) |
+| 6 | Run `dedupe-niche-2026.py` (no MillionVerifier needed) | 4 dedupe-cleaned final CSVs in `/segmented-lists/` | 30m |
+| 7 | Write 4 sequences (validate spintax, no em dashes, no exclamations) | sequence JSONs | 4h |
+| 8 | Run `setup-niche-2026-campaigns.py` | 4 Instantly campaigns created | 30m |
+| 9 | Run `push-niche-2026-leads.py` | leads attached, campaigns paused | 30m |
+| 10 | Manual QA: spot-check 10 leads/campaign, 2 test sends | Pass | 30m |
+| 11 | Unpause campaigns | Live sending | 5m |
 
-**Total active effort:** ~17-18h, spread across 3-4 calendar days (async scraper + verifier runtimes).
+**Total active effort:** ~16-18h, spread across 3-4 calendar days (async scraper + AI Ark polling runtimes).
 
 **Learning loop activates Day 7-10** after first reply data lands, via `signal-scoring-feedback` Tier A vs B comparison per niche.
 
@@ -180,10 +193,11 @@ Intermediate artifacts in `/data/niche-2026/` are first-class — each stage is 
 
 These get resolved when writing-plans runs, not here:
 
-- AI Ark API exact filter syntax — needs schema check at implementation kickoff.
+- Whether the 5,099 credit balance is the true ceiling or whether the user can top up to the originally-assumed 10K before Stage 4. (User confirmed proceeding with 5K.)
 - Whether `composite-scorer.ts` currently accepts dynamic ICP config or needs a new niche-config loader (likely the latter — to verify by reading `src/lib/pipeline/composite-scorer.ts`).
 - Specific Apify actors for LinkedIn headcount-delta enrichment (which one your `signals/utils.ts` is already wired to).
 - Whether `signal-scoring-feedback` reads campaign-tagged tiers automatically or needs the Tier A/B distinction passed explicitly.
+- Polling cadence for `/people/export/{trackId}/statistics` — start at 30s, back off if rate-limited (5 req/s observed limit).
 
 ## Out of scope
 
