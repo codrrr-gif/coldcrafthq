@@ -298,16 +298,30 @@ async function main() {
   process.chdir(ROOT);
 
   const creditsBefore = (await getCredits()).total;
-  const scopedTotal = JOBS
-    .filter(j => existsSync(j.scoredCsv))
-    .reduce((sum, j) => sum + parseCsv(readFileSync(j.scoredCsv, 'utf8')).rows.length, 0);
+  // Count records that still need processing: scored total minus already-
+  // exported (via the alreadyProcessedIds set per output file). This avoids
+  // the pre-flight aborting on resume runs that look big-scoped but mostly
+  // re-iterate already-paid-for IDs.
+  let scopedTotal = 0;
+  let remainingTotal = 0;
+  for (const j of JOBS) {
+    if (!existsSync(j.scoredCsv)) continue;
+    const { rows } = parseCsv(readFileSync(j.scoredCsv, 'utf8'));
+    scopedTotal += rows.length;
+    const { ids: processed } = alreadyProcessedIds(j.finalCsv);
+    for (const r of rows) {
+      const pid = (r.aiark_person_id || '').trim();
+      if (pid && !processed.has(pid)) remainingTotal++;
+    }
+  }
 
   console.log('\n=== PRE-FLIGHT ===');
   console.log(`Credit balance:        ${creditsBefore.toFixed(1)}`);
-  console.log(`Records to attempt:    ${scopedTotal}`);
-  console.log(`Worst-case spend:      ${scopedTotal}cr (1 per landed email)`);
-  console.log(`Expected actual:       ~${Math.floor(scopedTotal * 0.85)}cr (15% miss rate)`);
-  if (scopedTotal > creditsBefore * 0.9) {
+  console.log(`Scored records total:  ${scopedTotal}`);
+  console.log(`Remaining to attempt:  ${remainingTotal} (after resume-skip)`);
+  console.log(`Worst-case spend:      ${remainingTotal}cr (1 per landed email)`);
+  console.log(`Expected actual:       ~${Math.floor(remainingTotal * 0.85)}cr (15% miss rate)`);
+  if (remainingTotal > creditsBefore * 0.9) {
     console.error('\nABORT: forecast > 90% of balance. Tighten cohorts or top up.');
     process.exit(2);
   }

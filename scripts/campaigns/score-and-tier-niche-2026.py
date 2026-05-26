@@ -22,6 +22,23 @@ from lib.niche_scoring import score_lead, tier_for_score, RECRUITER_ICP, AGENCY_
 ROOT = os.path.expanduser('~/Documents/coldcrafthq')
 SIGNALS_PRESENT = False  # V10 follow-up: flip to True once signal columns exist
 
+# Tier B threshold widened from default 50 → 30 for the niche-2026 expansion run.
+# Records at score 30-49 are still industry-aligned (industry match = 25pts),
+# geo-correct (10pts), and have a non-excluded title — they lose points on
+# missing-headcount or weaker titles. Acceptable for the Tier B firmographic
+# sequence (the "referral-dependency" copy frame works on broader cohorts).
+MIN_TIER_B_SCORE = 30
+
+
+def expanded_tier(score: int) -> str | None:
+    """Custom tier gating for the niche-2026 expansion run. Tier A unchanged,
+    Tier B widened to score >= 30 (was 50)."""
+    if score >= 65:
+        return 'A'
+    if score >= MIN_TIER_B_SCORE:
+        return 'B'
+    return None
+
 INPUTS = [
     {
         'in':  f'{ROOT}/data/niche-2026/metadata-recruiters.csv',
@@ -67,7 +84,7 @@ def process(cfg: dict) -> tuple[int, int, int]:
     for r in rows:
         normalized = normalize_for_scoring(r)
         s = score_lead(normalized, cfg['icp'])
-        t = tier_for_score(s, signals_present=SIGNALS_PRESENT)
+        t = expanded_tier(s)
         bucket = (s // 10) * 10
         score_hist[bucket] = score_hist.get(bucket, 0) + 1
 
