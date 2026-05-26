@@ -8,7 +8,7 @@
 //   tsx ai-ark-cli.ts fetch-export --track-id=<trackId> --out=path/to/verified.csv
 import { appendFileSync, readFileSync, writeFileSync } from 'node:fs';
 import {
-  getCredits, searchPeople, exportPeopleWithEmail,
+  getCredits, searchPeople, exportPeopleWithEmail, exportPersonSingle,
   getExportStatistics, getExportInquiries,
   type AIArkPersonRecord,
   type AIArkExportInquiryRecord,
@@ -153,6 +153,16 @@ function inquiryRow(i: AIArkExportInquiryRecord): Record<string, string> | null 
   };
 }
 
+// Single-person email find by AI Ark person id (or LinkedIn URL).
+// Output: one JSON line on stdout — { found: bool, email?, status?, ... }
+async function cmdExportSingle() {
+  const id = arg('id', false);
+  const url = arg('url', false);
+  if (!id && !url) throw new Error('export-single requires --id=<uuid> or --url=<linkedin>');
+  const result = await exportPersonSingle(id ? { id } : { url });
+  console.log(JSON.stringify(result));
+}
+
 async function cmdFetchExport() {
   const trackId = arg('track-id')!;
   const outPath = arg('out')!;
@@ -174,14 +184,15 @@ async function cmdFetchExport() {
 async function main() {
   const cmd = process.argv[2];
   switch (cmd) {
-    case 'credits':       return cmdCredits();
-    case 'search-people': return cmdSearchPeople();
-    case 'export-people': return cmdExportPeople();
-    case 'poll-export':   return cmdPollExport();
-    case 'fetch-export':  return cmdFetchExport();
+    case 'credits':        return cmdCredits();
+    case 'search-people':  return cmdSearchPeople();
+    case 'export-people':  return cmdExportPeople();
+    case 'export-single':  return cmdExportSingle();
+    case 'poll-export':    return cmdPollExport();
+    case 'fetch-export':   return cmdFetchExport();
     default:
       console.error(`Unknown command: ${cmd}`);
-      console.error('Usage: ai-ark-cli.ts <credits|search-people|export-people|poll-export|fetch-export> [--flags...]');
+      console.error('Usage: ai-ark-cli.ts <credits|search-people|export-people|export-single|poll-export|fetch-export> [--flags...]');
       process.exit(2);
   }
 }

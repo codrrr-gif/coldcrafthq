@@ -54,10 +54,14 @@ const RETRY_BACKOFFS_MS = [500, 1500, 4000];
 function isTransientError(err: unknown): boolean {
   if (!(err instanceof Error)) return false;
   // Node's outer `fetch failed` error wraps the real cause; inspect both.
+  // ES2022 Error.cause is widely available at runtime in Node 18+; the
+  // `as { cause?: unknown }` cast keeps stricter TS targets happy.
+  const errWithCause = err as Error & { cause?: unknown };
+  const cause = errWithCause.cause;
   const msg = err.message || '';
-  const causeMsg = err.cause instanceof Error ? err.cause.message : '';
-  const causeCode = err.cause instanceof Error
-    ? (err.cause as NodeJS.ErrnoException).code ?? ''
+  const causeMsg = cause instanceof Error ? cause.message : '';
+  const causeCode = cause instanceof Error
+    ? ((cause as NodeJS.ErrnoException).code ?? '')
     : '';
   const combined = `${msg} ${causeMsg} ${causeCode}`;
 
@@ -265,6 +269,63 @@ export async function searchPeople(
 export interface AIArkExportParams extends AIArkPeopleSearchParams {
   // /people/export size cap is 10_000 in one job
   size?: number;
+}
+
+// Response from POST /people/export/single — full profile + email output.
+// 404 with no email found means no charge; success means 1 credit per match.
+export interface AIArkSingleExportResult {
+  found: boolean;          // false if HTTP 404 (no email)
+  email?: string;
+  emailStatus?: string;    // 'VALID' | 'INVALID' | 'UNKNOWN'
+  emailSubStatus?: string;
+  emailDomainType?: string; // 'SMTP' | 'CATCH_ALL'
+  raw?: Record<string, unknown>; // full response body when found
+}
+
+// Synchronous single-person email export by AI Ark person id (or LinkedIn URL).
+// Cost: 1 credit per success (0.5 enrich + 0.5 BounceBan verify), 0 per miss.
+// 404 means no email found — treat as a miss (return { found: false }).
+export async function exportPersonSingle(idOrUrl: { id?: string; url?: string }): Promise<AIArkSingleExportResult> {
+  if (!idOrUrl.id && !idOrUrl.url) {
+    throw new Error('exportPersonSingle requires id or url');
+  }
+  const body = idOrUrl.id ? { id: idOrUrl.id } : { url: idOrUrl.url };
+
+  return withRetry(async () => {
+    const res = await fetch(`${API_BASE}/people/export/single`, {
+      method: 'POST',
+      headers: headers(),
+      body: JSON.stringify(body),
+      signal: AbortSignal.timeout(30_000),
+    });
+
+    if (res.status === 404) {
+      // Documented: no email found. Not an error, not charged.
+      return { found: false };
+    }
+    if (!res.ok) {
+      const text = await res.text().catch(() => '');
+      throw new Error(`AI Ark exportPersonSingle failed: ${res.status} ${text}`);
+    }
+
+    const data = await res.json() as Record<string, unknown>;
+    // Email shape mirrors /people/export inquiries: `email.output[].address` w/ status fields
+    const emailObj = data.email as { output?: Array<{
+      address?: string; status?: string; subStatus?: string; domainType?: string;
+    }> } | undefined;
+    const firstValid = emailObj?.output?.find(o => o.status === 'VALID');
+    if (!firstValid?.address) {
+      return { found: false, raw: data };
+    }
+    return {
+      found: true,
+      email: firstValid.address,
+      emailStatus: firstValid.status,
+      emailSubStatus: firstValid.subStatus,
+      emailDomainType: firstValid.domainType,
+      raw: data,
+    };
+  }, `exportPersonSingle(${idOrUrl.id ?? idOrUrl.url})`);
 }
 
 export async function exportPeopleWithEmail(
