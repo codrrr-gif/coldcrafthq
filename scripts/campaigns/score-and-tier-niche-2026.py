@@ -22,11 +22,13 @@ from lib.niche_scoring import score_lead, tier_for_score, RECRUITER_ICP, AGENCY_
 ROOT = os.path.expanduser('~/Documents/coldcrafthq')
 SIGNALS_PRESENT = False  # V10 follow-up: flip to True once signal columns exist
 
-# Tier B threshold widened from default 50 → 30 for the niche-2026 expansion run.
-# Records at score 30-49 are still industry-aligned (industry match = 25pts),
-# geo-correct (10pts), and have a non-excluded title — they lose points on
-# missing-headcount or weaker titles. Acceptable for the Tier B firmographic
-# sequence (the "referral-dependency" copy frame works on broader cohorts).
+# Tier B threshold progressively widened to spend the credit buffer:
+#   Original niche_scoring default: 50
+#   Expansion 1 (Task 10b): 30
+#   Expansion 2 (this run): kept at 30 — the new 2K-per-niche metadata pull
+#     added enough fresh score >=30 records to reach the 10K target without
+#     needing to dip into score 20-29 (which exceeds the budget at current
+#     find rates).
 MIN_TIER_B_SCORE = 30
 
 

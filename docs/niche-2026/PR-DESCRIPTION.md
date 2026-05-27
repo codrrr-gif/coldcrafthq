@@ -52,24 +52,34 @@ All corrections documented in `docs/niche-2026/ai-ark-api-notes.md` and reflecte
 
 ## Cohort outcomes
 
-After scoring 10,000 metadata records (5K recruiters + 5K agencies):
+Scored 14,000 metadata records total (7K recruiters + 7K agencies, two passes of metadata pulls). Three export passes against progressively-widened tier thresholds (50 → 30 → 30 with new metadata).
 
-| Niche | Tier A | Tier B | Drop | Survivors → Export → Final (verified) |
+| Niche | Tier A | Tier B (score 30+) | Drop | Final verified |
 |---|---|---|---|---|
-| Retained Recruiters | 1,310 (26%) | 1,665 (33%) | 2,025 (41%) | 2,975 → ~987 found (Tier A) + ~1,300 expected B |
-| Specialist Agencies | 213 (4%) | 2,002 (40%) | 2,785 (56%) | 2,215 → ~180 Tier A + ~1,600 Tier B expected |
-
-Final verified-lead count after Task 10 export: **~3,000-3,500 verified leads across both niches** (BounceBan find rate ~85%).
+| Retained Recruiters | 1,825 (26%) | 4,809 (69%) | 366 (5%) | **4,004** (1,265 A + 2,739 B) |
+| Specialist Agencies | 269 (4%) | 6,261 (89%) | 470 (7%) | **4,456** (210 A + 4,246 B) |
+| **TOTAL** | **2,094** | **11,070** | **836** | **8,460 verified emails** |
 
 Agency Tier A is small because AI Ark records often lack parsable headcount, capping firmo scores at 50. Future: tighten the metadata pull params + use signal enrichment to lift Tier A counts.
+
+**Find rate observations across the runs:**
+- Top firmographic (Tier A, score 65+): ~85% find rate
+- Middle firmographic (Tier B, score 50-64): ~80% find rate
+- Expansion 1 (Tier B widened to score 30-49 on top pages): ~70% find rate
+- Expansion 2 (new metadata pages 50-69, all scores): ~35% find rate
+
+The find-rate cliff between top pages (0-49) and deeper pages (50+) is the load-bearing reason we shipped at 8,460 instead of the 10K stretch target.
 
 ## Credit ledger
 
 - Starting balance: 5,099 (after Task 4 baseline probing)
 - User top-up: +14,750 → 19,829
-- Stage 1 (metadata pulls, ~10K records): ~6,950cr (some waste from initial ECONNRESETs + an `--append` bug, both fixed mid-session)
-- Stage 4 (export-single, projected): ~3,500cr
-- Final balance: ~9,400cr (47% remaining buffer)
+- Stage 1 metadata pulls (10K records, Tasks 5-6): ~6,950cr
+- Stage 4 initial export (5,190 survivors at score 50+, Task 10): 4,322cr
+- Stage 4b expansion 1 (3,428 records at score 30-49, Task 10b): 2,901cr
+- Stage 4c metadata expansion + export (4K more metadata + 5,500 new survivors, Task 10c): 3,257cr
+- **Final balance: 2,235cr (11% buffer for V10 follow-ups)**
+- **Per-final-lead cost: 2.08cr** (full pipeline cost amortized across 8,460 verified leads)
 
 ## Tradeoffs taken
 

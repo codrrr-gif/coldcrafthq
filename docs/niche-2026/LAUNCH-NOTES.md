@@ -4,25 +4,39 @@ Status as of `feature/niche-2026-list` HEAD. This doc is the handoff for picking
 
 ---
 
-## State (when this doc was written)
+## State (final — 2026-05-27)
 
 **Branch:** `feature/niche-2026-list`
 
 **What's complete:**
-- Tasks 1-9 ✅ (spec, plan, AI Ark client + CLI, 10K metadata records, scoring, 4 tier CSVs)
-- Task 10 ⏳ in progress — concurrent TS orchestrator running, 987 verified Tier A recruiter emails already on disk, processing the other 3 tiers
+- Tasks 1-9 ✅ (spec, plan, AI Ark client + CLI, 14K metadata records, scoring, 4 tier CSVs)
+- Task 10 + 10b + 10c ✅ — three export passes, **8,460 verified BounceBan-VALID emails** on disk
 - Task 11 ✅ (4 sequence JSONs authored, validated against locked rules)
 - Task 12 ⏸ ready to run, sending-account pools need to be filled in first
 - Tasks 13 + 14 ⏸ done inside Task 12's script + manual unpause
 
-**Final lists are at:** `/segmented-lists/CC-List-{RetainedRecruiters,SpecialistAgencies}-{A,B}.csv`
+**Final verified counts (in `/segmented-lists/`):**
 
-**Credit ledger:**
+| File | Verified emails |
+|---|---|
+| CC-List-RetainedRecruiters-A.csv | 1,265 |
+| CC-List-RetainedRecruiters-B.csv | 2,739 |
+| CC-List-SpecialistAgencies-A.csv | 210 |
+| CC-List-SpecialistAgencies-B.csv | 4,246 |
+| **Total** | **8,460** |
+
+**Why we stopped at 8,460 vs the 10K target:** AI Ark's deeper-page records (50+) had a ~35% BounceBan find rate vs ~85% on the top pages. The third export pass added only 1,181 finds for 1,257cr. At those margins, the next ~1,500 finds would have needed ~3,800cr (exceeded the remaining 2,235cr balance). Stopped to preserve buffer for V10 follow-ups.
+
+**Credit ledger (full):**
 - Started: 5,099 (Task 4 baseline)
 - After Task 4 probing: 5,079
 - After top-up: 19,829
-- After Stage 1 metadata pulls: 12,879
-- After Task 10 (in progress): ~10,500 estimated at completion
+- After Stage 1 metadata pulls (10K records): 12,879
+- After Task 10 export (initial 5,190): 8,393
+- After Task 10b expansion 1 (widen Tier B to score 30): 5,492
+- After Task 10c expansion 2 (4K new metadata + export): **2,235**
+- Total session burn: **17,594 credits**
+- Per-final-lead cost: **2.08 credits**
 - AI Ark credit endpoint: `/api/developer-portal/v1/payments/credits`
 
 ---

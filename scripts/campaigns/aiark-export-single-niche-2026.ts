@@ -315,14 +315,19 @@ async function main() {
     }
   }
 
+  // Expected-spend forecast uses observed find rate from past runs (~75%
+  // for the expansion-tier cohort) × observed cr/find (~1.02). Worst-case
+  // (every attempt finds, every find costs 1cr) is also shown but doesn't
+  // gate the run — most attempts cost nothing (404 misses are free).
+  const expectedActual = Math.ceil(remainingTotal * 0.75 * 1.02);
   console.log('\n=== PRE-FLIGHT ===');
   console.log(`Credit balance:        ${creditsBefore.toFixed(1)}`);
   console.log(`Scored records total:  ${scopedTotal}`);
   console.log(`Remaining to attempt:  ${remainingTotal} (after resume-skip)`);
-  console.log(`Worst-case spend:      ${remainingTotal}cr (1 per landed email)`);
-  console.log(`Expected actual:       ~${Math.floor(remainingTotal * 0.85)}cr (15% miss rate)`);
-  if (remainingTotal > creditsBefore * 0.9) {
-    console.error('\nABORT: forecast > 90% of balance. Tighten cohorts or top up.');
+  console.log(`Worst-case spend:      ${remainingTotal}cr (every attempt finds)`);
+  console.log(`Expected actual:       ~${expectedActual}cr (75% find × 1.02cr)`);
+  if (expectedActual > creditsBefore * 0.9) {
+    console.error('\nABORT: expected actual spend > 90% of balance. Tighten cohorts or top up.');
     process.exit(2);
   }
   console.log('Proceeding...\n');
