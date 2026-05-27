@@ -85,39 +85,57 @@ const TOOLS: Tool[] = [
   },
   {
     name: 'create_campaign',
-    description: 'Create a new email campaign. Requires name and campaign_schedule.',
+    description: 'Create a new email campaign. Requires name and campaign_schedule. All settings (email_list, daily_limit, tracking flags, etc.) can be passed on create — no need to PATCH separately.',
     inputSchema: {
       type: 'object',
       properties: {
         name: { type: 'string', description: 'Campaign name.' },
         campaign_schedule: {
           type: 'object',
-          description: 'Schedule object with timezone and sending windows.',
+          description: 'Schedule object: { schedules: [{name, timing:{from,to}, days:{"0":bool,...,"6":bool}, timezone}] }. Day keys are integers 0-6 (Sun-Sat). Timezone enum (e.g., "America/Detroit"; "America/New_York" is NOT accepted).',
         },
         sequences: {
           type: 'array',
-          description: 'Email sequence steps (only first array element is used).',
-          items: {
-            type: 'object',
-            properties: {
-              subject: { type: 'string' },
-              body: { type: 'string' },
-              delay_days: { type: 'number', description: 'Days to wait before this step.' },
-            },
-          },
+          description: 'Nested sequence array. Shape: [{steps: [{type:"email", delay:N, variants:[{subject, body}]}]}]. Each variant is an A/B test variant for that step.',
         },
+        email_list: {
+          type: 'array',
+          items: { type: 'string' },
+          description: 'Sending account emails attached to this campaign.',
+        },
+        daily_limit: { type: 'number', description: 'Daily send cap for the campaign.' },
+        daily_max_leads: { type: 'number', description: 'Max new leads to contact per day.' },
+        stop_on_reply: { type: 'boolean' },
+        stop_on_auto_reply: { type: 'boolean' },
+        open_tracking: { type: 'boolean' },
+        link_tracking: { type: 'boolean' },
+        text_only: { type: 'boolean' },
+        email_gap: { type: 'number', description: 'Gap between emails in minutes.' },
       },
       required: ['name', 'campaign_schedule'],
     },
   },
   {
     name: 'update_campaign',
-    description: 'Update campaign settings or name. Uses PATCH.',
+    description: 'Update campaign settings, name, sequences, or sending account list. Uses PATCH.',
     inputSchema: {
       type: 'object',
       properties: {
         campaign_id: { type: 'string', description: 'Campaign ID to update.' },
         name: { type: 'string' },
+        sequences: {
+          type: 'array',
+          description: 'Replace the campaign sequence. Shape: [{steps: [{type:"email", delay:N, variants:[{subject, body}]}]}].',
+        },
+        email_list: {
+          type: 'array',
+          items: { type: 'string' },
+          description: 'Replace the sending account list (array of email addresses).',
+        },
+        campaign_schedule: {
+          type: 'object',
+          description: 'Replace the schedule. Same shape as create_campaign.',
+        },
         daily_limit: { type: 'number' },
         email_gap: { type: 'number', description: 'Gap between emails in minutes.' },
         open_tracking: { type: 'boolean', description: 'Track email opens.' },
@@ -195,7 +213,7 @@ const TOOLS: Tool[] = [
   },
   {
     name: 'add_leads_to_campaign',
-    description: 'Add leads to a campaign. Extra fields become custom variables usable in templates as {{variable_name}}.',
+    description: 'Bulk-add leads (up to 1000 per request, auto-batched). Custom variables for template substitution (e.g., {{industryNiche}}) MUST go in each lead\'s `custom_variables` object — top-level non-standard fields are silently dropped by Instantly. Standard fields (email/first_name/last_name/company_name/title/etc.) stay at top level.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -210,14 +228,18 @@ const TOOLS: Tool[] = [
               first_name: { type: 'string' },
               last_name: { type: 'string' },
               company_name: { type: 'string' },
-              personalized_opener: { type: 'string', description: 'AI-personalized opening line.' },
-              title: { type: 'string' },
-              linkedin_url: { type: 'string' },
+              personalization: { type: 'string', description: 'AI-personalized opening line — renders as {{personalization}}.' },
+              job_title: { type: 'string' },
               website: { type: 'string' },
               phone: { type: 'string' },
+              custom_variables: {
+                type: 'object',
+                description: 'Custom variables (strings/numbers/booleans). Each key becomes a {{key}} template variable. Example: {industryNiche: "PR"} renders as {{industryNiche}} → "PR".',
+                additionalProperties: true,
+              },
             },
             required: ['email'],
-            additionalProperties: { type: 'string' },
+            additionalProperties: true,
           },
         },
         skip_if_in_workspace: { type: 'boolean', description: 'Skip leads already in any campaign (default false).' },
@@ -412,11 +434,23 @@ async function handleTool(name: string, args: Record<string, unknown>): Promise<
     }
 
     case 'create_campaign': {
+      // Pass through every documented optional field so callers don't need a
+      // separate PATCH for settings/email_list/etc. (Instantly accepts all of
+      // them on create per https://developer.instantly.ai/api-reference/campaign/create-campaign.)
       const body: Record<string, unknown> = {
         name: args.name,
         campaign_schedule: args.campaign_schedule,
       };
-      if (args.sequences) body.sequences = args.sequences;
+      const OPTIONAL_FIELDS = [
+        'sequences', 'email_list',
+        'daily_limit', 'daily_max_leads',
+        'stop_on_reply', 'stop_on_auto_reply',
+        'open_tracking', 'link_tracking', 'text_only',
+        'email_gap',
+      ];
+      for (const f of OPTIONAL_FIELDS) {
+        if (args[f] !== undefined) body[f] = args[f];
+      }
       return JSON.stringify(await req('/campaigns', { method: 'POST', body: JSON.stringify(body) }), null, 2);
     }
 
@@ -478,7 +512,39 @@ async function handleTool(name: string, args: Record<string, unknown>): Promise<
     }
 
     case 'add_leads_to_campaign': {
-      const leads = args.leads as Array<Record<string, string>>;
+      // Instantly silently drops non-standard top-level fields on leads —
+      // custom variables MUST be inside `custom_variables`. Auto-wrap any
+      // unknown top-level keys so callers can pass them flat (the natural
+      // ergonomic) without losing the substitution.
+      const STANDARD_LEAD_FIELDS = new Set([
+        'email', 'first_name', 'last_name', 'company_name',
+        'personalization', 'job_title', 'phone', 'website',
+        'lt_interest_status', 'pl_value_lead', 'assigned_to', 'list_id',
+        'custom_variables',
+      ]);
+      const rawLeads = args.leads as Array<Record<string, unknown>>;
+      const leads = rawLeads.map((lead) => {
+        const out: Record<string, unknown> = {};
+        const extras: Record<string, unknown> = {};
+        for (const [k, v] of Object.entries(lead)) {
+          if (STANDARD_LEAD_FIELDS.has(k)) {
+            out[k] = v;
+          } else {
+            extras[k] = v;
+          }
+        }
+        if (Object.keys(extras).length > 0) {
+          // Merge into existing custom_variables if the caller also supplied that
+          out.custom_variables = {
+            ...(typeof out.custom_variables === 'object' && out.custom_variables !== null
+              ? (out.custom_variables as Record<string, unknown>)
+              : {}),
+            ...extras,
+          };
+        }
+        return out;
+      });
+
       const BATCH = 1000;
       const results: unknown[] = [];
       for (let i = 0; i < leads.length; i += BATCH) {

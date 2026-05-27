@@ -130,7 +130,7 @@ SCHEDULE = {
             '5': True,   # Friday
             '6': False,  # Saturday
         },
-        'timezone': 'America/New_York',
+        'timezone': 'America/Detroit',  # ET — matches existing campaigns; "America/New_York" is NOT in Instantly's timezone enum
     }],
 }
 
