@@ -114,6 +114,65 @@ _LEGAL_SUFFIX_RE = re.compile(
 )
 
 
+# Agency sub-niche rules. First match wins. Keywords matched case-insensitively
+# against the combined blob of company_industry + company_name + headline + title.
+# Order matters: more-specific specialisms before generic catch-alls.
+# Each label slots into {{industryNiche}} so it must read naturally in:
+#   "Most {{industryNiche}} agency founders..."
+#   "companies that buy {{industryNiche}} services..."
+#   "how this works for {{industryNiche}} agencies?"
+_AGENCY_SUB_NICHE_RULES = [
+    (['revops', 'revenue operations'], 'RevOps'),
+    (['demand gen', 'demand generation'], 'demand-gen'),
+    (['performance market', 'paid media', 'paid social', 'paid search'], 'performance marketing'),
+    (['lifecycle market', 'crm agency', 'email market'], 'lifecycle marketing'),
+    (['public relations', 'pr agency', 'pr firm', 'communications agency', 'communications firm'], 'PR'),
+    (['content market', 'b2b content'], 'B2B content'),
+    (['fractional cmo'], 'fractional CMO'),
+    (['abm', 'account-based market', 'account based market'], 'ABM'),
+    (['sales enablement'], 'sales enablement'),
+    (['brand strateg', 'brand consultanc'], 'brand strategy'),
+    (['management consult'], 'management consulting'),
+    (['creative agenc', 'creative studio'], 'creative'),
+]
+
+
+def compute_sub_niche(row: dict, niche_default: str, campaign_name: str) -> str:
+    """Map a lead row to a sharper {{industryNiche}} value than niche_default.
+
+    Currently sharpens AGENCY leads only — recruiter templates hardcode
+    "retained-search" in the copy so per-lead variation doesn't move the
+    needle there.
+
+    Returns niche_default as the fallback so the copy always renders cleanly.
+    """
+    # Recruiter cohort: pass through niche_default ("executive search").
+    # Recruiter copy uses hardcoded "retained-search" framing — per-lead
+    # variation isn't worth the misfire risk.
+    if 'Agenc' not in campaign_name:
+        return niche_default
+
+    # Agency cohort: scan combined text for sub-vertical signals
+    blob = ' '.join(filter(None, [
+        row.get('company_industry', ''),
+        row.get('company_name', ''),
+        row.get('headline', ''),
+        row.get('title', ''),
+    ])).lower()
+
+    for keywords, label in _AGENCY_SUB_NICHE_RULES:
+        if any(kw in blob for kw in keywords):
+            return label
+
+    # Soft fallbacks from company_industry alone
+    ind = (row.get('company_industry') or '').lower()
+    if 'public relations' in ind:
+        return 'PR'
+    if 'marketing' in ind or 'advertising' in ind:
+        return 'marketing'
+    return niche_default  # "specialist B2B"
+
+
 def normalize_company_name(name: str) -> str:
     """Strip legal-entity suffixes (Inc / LLC / Ltd / etc.) for cleaner copy
     rendering. Keeps brand-bearing words like Group / Partners / & Associates
@@ -270,8 +329,13 @@ def main() -> int:
                 email = (row.get('email') or '').strip()
                 if not email:
                     continue
-                # Niche default — falls back if row didn't carry one
-                niche = (row.get('niche') or '').strip() or niche_default
+                # Niche: prefer an explicit row-level value, else compute
+                # a sharper sub-niche from company_industry/name/headline,
+                # else fall back to the campaign-level default.
+                niche = (
+                    (row.get('niche') or '').strip()
+                    or compute_sub_niche(row, niche_default, name)
+                )
                 # Use full_name if first/last not split well
                 first = (row.get('first_name') or '').strip()
                 last = (row.get('last_name') or '').strip()
