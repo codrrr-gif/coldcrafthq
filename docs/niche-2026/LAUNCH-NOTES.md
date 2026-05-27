@@ -154,6 +154,44 @@ For each of the 4 niche-2026 campaigns in Instantly:
 
 ---
 
+## Instantly quirks worth knowing
+
+**"Send test" preview collapses paragraphs.** When you use Instantly's "Send test"
+feature to email yourself a sequence step, the rendered email appears as a single
+wall of text — `\n\n` paragraph breaks get stripped by the preview pipeline.
+**This does NOT happen on real deliveries to prospects.** Real sends use
+`text/plain` MIME with newlines preserved; the preview renders as HTML where
+whitespace collapses.
+
+Confirmed during niche-2026 launch on 2026-05-27. A real delivered email from
+an active production campaign (CC-HR-RPO equivalent) shows perfectly-structured
+paragraphs. The test-send to the same address from the same campaign shows the
+wall-of-text rendering.
+
+**Lesson:** trust the data shape in `get_campaign` (where you can see the
+actual `\n\n` separators) over the test-send preview. The data is what
+prospects receive.
+
+**Spintax syntax: Instantly's `{{RANDOM |a|b|c}}` form, NOT standard `{a|b|c}`.**
+Standard spintax renders as literal text in delivered emails. Documented at
+https://help.instantly.ai/en/articles/6384663-how-to-use-spintax. The transform
+script at `scripts/campaigns/fix-spintax-syntax.py` converts between the two.
+
+**Custom variables MUST go inside `custom_variables` object on each lead.**
+Top-level non-standard fields (e.g., `industryNiche` at the lead root) are
+silently dropped. The `{{industryNiche}}` template variable will render as
+literal `{{industryNiche}}` in the email body if you make this mistake.
+The fixed MCP at `mcp-servers/instantly.ts` auto-wraps unknown fields into
+`custom_variables` to prevent this.
+
+**Timezone enum:** `America/Detroit` is accepted, `America/New_York` returns
+400 from the API. Use Detroit for ET-aligned schedules.
+
+**Days are integer keys 0-6 (Sun-Sat),** not day-name strings (`monday`/etc.).
+The API will reject day-name keys.
+
+---
+
 ## Architecture notes (for future debugging)
 
 **AI Ark API gotchas — documented in `docs/niche-2026/ai-ark-api-notes.md`:**
