@@ -20,7 +20,6 @@ import os
 import re
 import subprocess
 import time
-from concurrent.futures import ThreadPoolExecutor, as_completed
 
 ROOT = os.path.expanduser('~/Documents/coldcrafthq')
 LISTS_DIR = f'{ROOT}/segmented-lists'
@@ -34,58 +33,102 @@ with open(f'{ROOT}/.env.prod') as f:
             break
 assert API_KEY, 'INSTANTLY_API_KEY not found in .env.prod'
 
-# ── Campaigns to create ─────────────────────────────────────────────────
-# IMPORTANT: Fill in 'accounts' with REAL sending-account emails BEFORE running.
-# Each campaign needs its own dedicated pool (do not reuse pools across niche-2026
-# AND the existing 14 campaigns — that would double-up sends and burn deliverability).
-# Recommendation: 3 inboxes per campaign at 30/day each = 90/day per campaign.
+# ── Sending pool (mirrors existing-campaign pattern) ───────────────────
+# All 50 warm inboxes attached to every campaign. Instantly load-balances
+# within each inbox's 30/day cap across all attached campaigns.
+ALL_INBOXES = [
+    'matt.m@coldcrafthqapp.com', 'matt.m@coldcrafthqco.com',
+    'matt.m@coldcrafthqgroup.com', 'matt.m@coldcrafthqhub.com',
+    'matt.m@coldcrafthqio.com', 'matt.m@coldcrafthqlabs.com',
+    'matt.m@coldcrafthqnow.com', 'matt.m@coldcrafthqteam.com',
+    'matt.m@getcoldcrafthq.com', 'matt.m@gocoldcrafthq.com',
+    'matt.m@hellocoldcrafthq.com', 'matt.m@hicoldcrafthq.com',
+    'matt.m@mycoldcrafthq.com', 'matt.m@thecoldcrafthq.com',
+    'matt.m@trycoldcrafthq.com', 'matt.m@usecoldcrafthq.com',
+    'matt.m@withcoldcrafthq.com',
+    'matt@coldcrafthqapp.com', 'matt@coldcrafthqco.com',
+    'matt@coldcrafthqgroup.com', 'matt@coldcrafthqhub.com',
+    'matt@coldcrafthqio.com', 'matt@coldcrafthqlabs.com',
+    'matt@coldcrafthqnow.com', 'matt@coldcrafthqteam.com',
+    'matt@getcoldcrafthq.com', 'matt@gocoldcrafthq.com',
+    'matt@hellocoldcrafthq.com', 'matt@hicoldcrafthq.com',
+    'matt@mycoldcrafthq.com', 'matt@thecoldcrafthq.com',
+    'matt@trycoldcrafthq.com', 'matt@usecoldcrafthq.com',
+    'matt@withcoldcrafthq.com',
+    'matthew@coldcrafthqapp.com', 'matthew@coldcrafthqco.com',
+    'matthew@coldcrafthqgroup.com', 'matthew@coldcrafthqhub.com',
+    'matthew@coldcrafthqlabs.com', 'matthew@coldcrafthqnow.com',
+    'matthew@coldcrafthqteam.com', 'matthew@getcoldcrafthq.com',
+    'matthew@gocoldcrafthq.com', 'matthew@hellocoldcrafthq.com',
+    'matthew@hicoldcrafthq.com', 'matthew@mycoldcrafthq.com',
+    'matthew@thecoldcrafthq.com', 'matthew@trycoldcrafthq.com',
+    'matthew@usecoldcrafthq.com', 'matthew@withcoldcrafthq.com',
+]
 
 CAMPAIGNS = {
     'CC-List-RetainedRecruiters-A': {
         'csv': 'CC-List-RetainedRecruiters-A.csv',
         'niche_default': 'executive search',
-        'accounts': [
-            # FILL IN: e.g., 'matt@search-coldcrafthq.com', 'matt.m@search-coldcrafthq.com', ...
-        ],
+        'accounts': ALL_INBOXES,
     },
     'CC-List-RetainedRecruiters-B': {
         'csv': 'CC-List-RetainedRecruiters-B.csv',
         'niche_default': 'executive search',
-        'accounts': [
-            # FILL IN
-        ],
+        'accounts': ALL_INBOXES,
     },
     'CC-List-SpecialistAgencies-A': {
         'csv': 'CC-List-SpecialistAgencies-A.csv',
-        'niche_default': 'specialist B2B agency',
-        'accounts': [
-            # FILL IN
-        ],
+        'niche_default': 'specialist B2B',
+        'accounts': ALL_INBOXES,
     },
     'CC-List-SpecialistAgencies-B': {
         'csv': 'CC-List-SpecialistAgencies-B.csv',
-        'niche_default': 'specialist B2B agency',
-        'accounts': [
-            # FILL IN
-        ],
+        'niche_default': 'specialist B2B',
+        'accounts': ALL_INBOXES,
     },
 }
 
-# Load sequences from JSON
+# Load sequences from JSON and transform to Instantly's expected shape.
+# The source JSON has docs-only keys (`_README`, `_label`) that must be
+# stripped, and each step needs `type: "email"` injected (Instantly's
+# schema requires it).
 with open(f'{ROOT}/scripts/campaigns/sequences/niche-2026-sequences.json') as f:
     SEQUENCES_JSON = json.load(f)
-# Each campaign's `steps` array goes into Instantly's `sequences` field as
-# `{"sequences":[{"steps":[...]}]}`
-SEQUENCES = {name: [{'steps': cfg['steps']}] for name, cfg in SEQUENCES_JSON.items()}
+
+
+def _clean_variant(v: dict) -> dict:
+    # Keep only the API-relevant keys; drop `_label` and any other underscore keys
+    return {k: v[k] for k in ('subject', 'body') if k in v}
+
+
+def _clean_step(s: dict) -> dict:
+    return {
+        'type': 'email',
+        'delay': s.get('delay', 0),
+        'variants': [_clean_variant(v) for v in s.get('variants', [])],
+    }
+
+
+SEQUENCES = {
+    name: [{'steps': [_clean_step(s) for s in cfg['steps']]}]
+    for name, cfg in SEQUENCES_JSON.items()
+    if not name.startswith('_') and 'steps' in cfg
+}
 
 SCHEDULE = {
     'schedules': [{
         'name': 'Weekdays',
         'timing': {'from': '07:00', 'to': '10:30'},
+        # Per Instantly v2 API docs: days keys are 0-6 (Sun-Sat) booleans,
+        # NOT day-name strings. Production campaigns confirm this format.
         'days': {
-            'monday': True, 'tuesday': True, 'wednesday': True,
-            'thursday': True, 'friday': True,
-            'saturday': False, 'sunday': False,
+            '0': False,  # Sunday
+            '1': True,   # Monday
+            '2': True,   # Tuesday
+            '3': True,   # Wednesday
+            '4': True,   # Thursday
+            '5': True,   # Friday
+            '6': False,  # Saturday
         },
         'timezone': 'America/New_York',
     }],
@@ -215,16 +258,36 @@ def api_call(method: str, url: str, data: dict | None = None) -> tuple[int, str]
     return code, body
 
 
-def post_lead(lead_data: dict) -> bool:
+def post_leads_bulk(campaign_id: str, leads: list[dict]) -> tuple[int, int, dict]:
+    """POST a batch of up to 1000 leads to /api/v2/leads/add. Returns
+    (status_code, uploaded_count, full_response_json).
+
+    Each lead must include `email`; campaign_id goes at the request top level.
+    Custom variables (e.g., industryNiche) belong inside lead['custom_variables'].
+    """
+    payload = {
+        'campaign_id': campaign_id,
+        'skip_if_in_workspace': False,
+        'skip_if_in_campaign': True,
+        'leads': leads,
+    }
     result = subprocess.run(
-        ['curl', '-s', '-o', '/dev/null', '-w', '%{http_code}',
-         '-X', 'POST', 'https://api.instantly.ai/api/v2/leads',
+        ['curl', '-s', '-w', '\n%{http_code}',
+         '-X', 'POST', 'https://api.instantly.ai/api/v2/leads/add',
          '-H', f'Authorization: Bearer {API_KEY}',
          '-H', 'Content-Type: application/json',
-         '-d', json.dumps(lead_data)],
+         '-d', json.dumps(payload)],
         capture_output=True, text=True,
     )
-    return result.stdout.strip() == '200'
+    lines = result.stdout.rsplit('\n', 1)
+    body = lines[0] if len(lines) > 1 else ''
+    code = int(lines[-1]) if lines[-1].isdigit() else 0
+    try:
+        data = json.loads(body) if body else {}
+    except json.JSONDecodeError:
+        data = {'raw': body}
+    uploaded = data.get('leads_uploaded', 0) if isinstance(data, dict) else 0
+    return code, uploaded, data if isinstance(data, dict) else {}
 
 
 def main() -> int:
@@ -340,18 +403,21 @@ def main() -> int:
                 first = (row.get('first_name') or '').strip()
                 last = (row.get('last_name') or '').strip()
                 # Normalize company name: strip Inc./LLC/Ltd/etc. for clean
-                # copy rendering ("Spent 20 min on Acme this morning" reads
-                # better than "Spent 20 min on Acme Recruiting, LLC this
-                # morning"). Brand-bearing words (Group/Partners/Associates)
+                # copy rendering. Brand-bearing words (Group/Partners/Associates)
                 # are preserved.
                 company = normalize_company_name(row.get('company_name') or '')
+                # CRITICAL: custom variables must go inside `custom_variables`
+                # object (per Instantly v2 API docs). Top-level non-standard
+                # fields are silently dropped, breaking {{industryNiche}}
+                # rendering downstream.
                 leads.append({
                     'email': email,
                     'first_name': first,
                     'last_name': last,
                     'company_name': company,
-                    'campaign': cid,
-                    'industryNiche': niche,
+                    'custom_variables': {
+                        'industryNiche': niche,
+                    },
                 })
 
         total = len(leads)
@@ -359,23 +425,26 @@ def main() -> int:
         success = 0
         errors = 0
         start = time.time()
-        with ThreadPoolExecutor(max_workers=5) as executor:
-            futures = {executor.submit(post_lead, lead): i for i, lead in enumerate(leads)}
-            for future in as_completed(futures):
-                try:
-                    if future.result():
-                        success += 1
-                    else:
-                        errors += 1
-                except Exception:
-                    errors += 1
-                done = success + errors
-                if done % 100 == 0 or done == total:
-                    elapsed = time.time() - start
-                    rate = done / elapsed if elapsed > 0 else 0
-                    eta = (total - done) / rate if rate > 0 else 0
-                    print(f'    Progress: {done}/{total} ({success} ok, {errors} err) '
-                          f'[{rate:.1f}/s, ETA {eta:.0f}s]')
+        # Bulk endpoint: up to 1000 leads/request. Push in batches.
+        BATCH = 500  # well under the 1000 cap for safety
+        for i in range(0, total, BATCH):
+            batch = leads[i:i + BATCH]
+            code, uploaded, resp = post_leads_bulk(cid, batch)
+            if code == 200:
+                success += uploaded
+                dupe = resp.get('duplicated_leads', 0) or 0
+                invalid = resp.get('invalid_email_count', 0) or 0
+                skipped = resp.get('skipped_count', 0) or 0
+                if dupe or invalid or skipped:
+                    print(f'    Batch {i // BATCH + 1}: uploaded={uploaded} '
+                          f'dupe={dupe} invalid={invalid} skipped={skipped}')
+                else:
+                    print(f'    Batch {i // BATCH + 1}: uploaded={uploaded}')
+            else:
+                errors += len(batch)
+                err_summary = str(resp)[:300]
+                print(f'    Batch {i // BATCH + 1}: FAILED HTTP {code}: {err_summary}')
+            time.sleep(0.5)  # polite pacing between batches
         elapsed = time.time() - start
         print(f'    Done: {success} imported, {errors} errors in {elapsed:.0f}s')
         grand_total += success
