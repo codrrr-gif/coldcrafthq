@@ -17,6 +17,7 @@ After running, all 4 campaigns are PAUSED. Manual QA + unpause is Task 14.
 import csv
 import json
 import os
+import re
 import subprocess
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
@@ -98,6 +99,48 @@ SETTINGS = {
     'link_tracking': False,
     'text_only': True,
 }
+
+
+# Match end-anchored legal-entity suffixes (US + CA market). Strip ONLY
+# these — "Group" / "Partners" / "& Associates" / "Company" are part of the
+# brand and stay. Foreign suffixes like AB / AG / GmbH / SARL are
+# DELIBERATELY excluded — short codes like "AB" case-insensitively match
+# the trailing "ab" in legit names like "The Leaders Lab" and produce
+# false strips ("The Leaders L"). The US+CA niche-2026 cohort doesn't
+# have meaningful exposure to those entity types anyway.
+_LEGAL_SUFFIX_RE = re.compile(
+    r'\s*,?\s*(?:Inc\.?|LLC\.?|L\.L\.C\.?|Ltd\.?|Limited|Corp\.?|Corporation|Co\.|Pvt\.?\s*Ltd\.?|Private\s+Limited|PLC|Pty\.?\s*Ltd\.?)\.?\s*$',
+    flags=re.IGNORECASE,
+)
+
+
+def normalize_company_name(name: str) -> str:
+    """Strip legal-entity suffixes (Inc / LLC / Ltd / etc.) for cleaner copy
+    rendering. Keeps brand-bearing words like Group / Partners / & Associates
+    / Company that real prospects would expect to see in the email.
+
+    Examples:
+        "The Smart Agency, Inc."     -> "The Smart Agency"
+        "Fusion Recruiters, LLC"     -> "Fusion Recruiters"
+        "Acme Corp."                 -> "Acme"
+        "The Grossman Group"         -> "The Grossman Group"   (unchanged)
+        "Henkel Search Partners"     -> "Henkel Search Partners" (unchanged)
+        "Harris, DeVille & Associates" -> "Harris, DeVille & Associates" (unchanged)
+        "kg&a"                       -> "kg&a"                 (unchanged)
+    """
+    if not name:
+        return ''
+    cleaned = name.strip()
+    # Strip once; pattern is end-anchored so chains like ", Inc., LLC" are rare
+    # but we loop up to 2x in case of stacked suffixes
+    for _ in range(2):
+        new = _LEGAL_SUFFIX_RE.sub('', cleaned).strip()
+        if new == cleaned:
+            break
+        cleaned = new
+    # Strip trailing commas left over from the suffix removal
+    cleaned = cleaned.rstrip(',').strip()
+    return cleaned or name.strip()  # never return empty; fall back to original
 
 
 def api_call(method: str, url: str, data: dict | None = None) -> tuple[int, str]:
@@ -232,7 +275,12 @@ def main() -> int:
                 # Use full_name if first/last not split well
                 first = (row.get('first_name') or '').strip()
                 last = (row.get('last_name') or '').strip()
-                company = (row.get('company_name') or '').strip()
+                # Normalize company name: strip Inc./LLC/Ltd/etc. for clean
+                # copy rendering ("Spent 20 min on Acme this morning" reads
+                # better than "Spent 20 min on Acme Recruiting, LLC this
+                # morning"). Brand-bearing words (Group/Partners/Associates)
+                # are preserved.
+                company = normalize_company_name(row.get('company_name') or '')
                 leads.append({
                     'email': email,
                     'first_name': first,
