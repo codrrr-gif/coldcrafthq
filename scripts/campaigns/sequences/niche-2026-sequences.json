@@ -16,12 +16,12 @@
           {
             "_label": "Founder Trap (frame-led)",
             "subject": "{{RANDOM |the math at {{companyName}}|{{firstName}}, retained-search math|quick read on {{companyName}}}}",
-            "body": "{{firstName}},<br><br>\n\nMost retained-search founders are running a high-paying job, not a business. {{RANDOM |Every search comes from your network.|Every meeting traces back to someone you know.}} The firm has your name on it but runs on your relationships.<br><br>\n\n{{RANDOM |Works fine until two things happen at once|Fine until two things go wrong at the same time}} - a big client pauses hiring, and your network has nothing new in it.<br><br>\n\nI build the system that fills the calendar {{RANDOM |without your personal involvement|hands-off for you|so the rainmaking isn't on you}}.<br><br>\n\n{{RANDOM |Want a quick map of how this works for retained search specifically?|Mind if I send something useful instead of a pitch?|Want me to put a sample together for {{companyName}}?}}<br><br>\n\n{{senderFirst}}"
+            "body": "{{firstName}},\n\nMost retained-search founders are running a high-paying job, not a business. {{RANDOM |Every search comes from your network.|Every meeting traces back to someone you know.}} The firm has your name on it but runs on your relationships.\n\n{{RANDOM |Works fine until two things happen at once|Fine until two things go wrong at the same time}} - a big client pauses hiring, and your network has nothing new in it.\n\nI build the system that fills the calendar {{RANDOM |without your personal involvement|hands-off for you|so the rainmaking isn't on you}}.\n\n{{RANDOM |Want a quick map of how this works for retained search specifically?|Mind if I send something useful instead of a pitch?|Want me to put a sample together for {{companyName}}?}}\n\n{{senderFirst}}"
           },
           {
             "_label": "Sample-of-20 (artifact-led)",
             "subject": "{{RANDOM |20 of these for {{companyName}}|sample for {{companyName}}|{{firstName}}, want 20?}}",
-            "body": "{{firstName}},<br><br>\n\n{{RANDOM |Spent 20 min on {{companyName}} this morning.|Took a quick look at {{companyName}} this morning.|Looked through {{companyName}} this morning.}}<br><br>\n\n{{RANDOM |If it's useful|If it'd help|If this is interesting}}, I can pull 20 verified contacts in your ICP - Heads of People / CHROs at companies actively scaling - and send them over. {{RANDOM |Yours whether we work together or not.|Yours regardless.|Free, no strings.}}<br><br>\n\nTakes me an hour. No pitch, just the list.<br><br>\n\n{{RANDOM |Want me to put it together for {{companyName}}?|Should I pull the 20 and send them?|Mind if I send the sample?}}<br><br>\n\n{{senderFirst}}"
+            "body": "{{firstName}},\n\n{{RANDOM |Spent 20 min on {{companyName}} this morning.|Took a quick look at {{companyName}} this morning.|Looked through {{companyName}} this morning.}}\n\n{{RANDOM |If it's useful|If it'd help|If this is interesting}}, I can pull 20 verified contacts in your ICP - Heads of People / CHROs at companies actively scaling - and send them over. {{RANDOM |Yours whether we work together or not.|Yours regardless.|Free, no strings.}}\n\nTakes me an hour. No pitch, just the list.\n\n{{RANDOM |Want me to put it together for {{companyName}}?|Should I pull the 20 and send them?|Mind if I send the sample?}}\n\n{{senderFirst}}"
           }
         ]
       },
@@ -31,7 +31,7 @@
           {
             "_label": "Day 3 — Insight (value, not re-pitch)",
             "subject": "",
-            "body": "{{firstName}}, {{RANDOM |quick add-on.|one more thought.|small follow-up.}}<br><br>\n\nCounterintuitive thing about retained-search outbound: the highest-reply prospects are VPs in their first 90 days at a new role, not C-suite. {{RANDOM |New VPs are trying to make their mark and stay open to vendors C-suite would filter out.|They're building their org and haven't built filters yet.}}<br><br>\n\nWorth knowing whether you outsource outbound or do it in-house.<br><br>\n\n{{senderFirst}}"
+            "body": "{{firstName}}, {{RANDOM |quick add-on.|one more thought.|small follow-up.}}\n\nCounterintuitive thing about retained-search outbound: the highest-reply prospects are VPs in their first 90 days at a new role, not C-suite. {{RANDOM |New VPs are trying to make their mark and stay open to vendors C-suite would filter out.|They're building their org and haven't built filters yet.}}\n\nWorth knowing whether you outsource outbound or do it in-house.\n\n{{senderFirst}}"
           }
         ]
       },
@@ -41,7 +41,7 @@
           {
             "_label": "Day 7 — Proof (concrete outcome)",
             "subject": "",
-            "body": "{{firstName}}, {{RANDOM |a quick data point|sharing a number|one stat worth knowing}}:<br><br>\n\nRetained-search firms running outbound at this scale typically land 2-3 qualified discovery calls per week from cold. Roughly 1 search engagement per month closes from that flow.<br><br>\n\nAll from inboxes the senior team never touches.<br><br>\n\n{{RANDOM |Want to see what that looks like for {{companyName}}?|Worth a quick walkthrough?|Open to seeing how this would work?}}<br><br>\n\n{{senderFirst}}"
+            "body": "{{firstName}}, {{RANDOM |a quick data point|sharing a number|one stat worth knowing}}:\n\nRetained-search firms running outbound at this scale typically land 2-3 qualified discovery calls per week from cold. Roughly 1 search engagement per month closes from that flow.\n\nAll from inboxes the senior team never touches.\n\n{{RANDOM |Want to see what that looks like for {{companyName}}?|Worth a quick walkthrough?|Open to seeing how this would work?}}\n\n{{senderFirst}}"
           }
         ]
       },
@@ -51,7 +51,7 @@
           {
             "_label": "Day 11 — Qualifier",
             "subject": "",
-            "body": "{{firstName}}, {{RANDOM |last attempt.|honest question.|one more.}}<br><br>\n\nIs filling the search pipeline something {{companyName}} is actively working on, or is it sorted for now?<br><br>\n\nEither answer is fine - just want to know if I should follow up later.<br><br>\n\n{{senderFirst}}"
+            "body": "{{firstName}}, {{RANDOM |last attempt.|honest question.|one more.}}\n\nIs filling the search pipeline something {{companyName}} is actively working on, or is it sorted for now?\n\nEither answer is fine - just want to know if I should follow up later.\n\n{{senderFirst}}"
           }
         ]
       },
@@ -61,7 +61,7 @@
           {
             "_label": "Day 17 — Door-open (clean exit)",
             "subject": "",
-            "body": "{{firstName}}, {{RANDOM |closing the loop here.|stepping back.|done following up.}}<br><br>\n\n{{RANDOM |Not going to push further.|Won't keep nudging.}} If retained-search prospect flow ever comes up for {{companyName}}, you have my email.<br><br>\n\n{{RANDOM |Best with the practice.|Good luck with the year.|Wishing you a strong year.}}<br><br>\n\n{{senderFirst}}"
+            "body": "{{firstName}}, {{RANDOM |closing the loop here.|stepping back.|done following up.}}\n\n{{RANDOM |Not going to push further.|Won't keep nudging.}} If retained-search prospect flow ever comes up for {{companyName}}, you have my email.\n\n{{RANDOM |Best with the practice.|Good luck with the year.|Wishing you a strong year.}}\n\n{{senderFirst}}"
           }
         ]
       }
@@ -83,12 +83,12 @@
           {
             "_label": "Founder Trap (frame-led)",
             "subject": "{{RANDOM |the math at {{companyName}}|{{firstName}}, retained-search math|quick read on {{companyName}}}}",
-            "body": "{{firstName}},<br><br>\n\nMost retained-search founders are running a high-paying job, not a business. {{RANDOM |Every search comes from your network.|Every meeting traces back to someone you know.}} The firm has your name on it but runs on your relationships.<br><br>\n\n{{RANDOM |Works fine until two things happen at once|Fine until two things go wrong at the same time}} - a big client pauses hiring, and your network has nothing new in it.<br><br>\n\nI build the system that fills the calendar {{RANDOM |without your personal involvement|hands-off for you|so the rainmaking isn't on you}}.<br><br>\n\n{{RANDOM |Want a quick map of how this works for retained search specifically?|Mind if I send something useful instead of a pitch?|Want me to put a sample together for {{companyName}}?}}<br><br>\n\n{{senderFirst}}"
+            "body": "{{firstName}},\n\nMost retained-search founders are running a high-paying job, not a business. {{RANDOM |Every search comes from your network.|Every meeting traces back to someone you know.}} The firm has your name on it but runs on your relationships.\n\n{{RANDOM |Works fine until two things happen at once|Fine until two things go wrong at the same time}} - a big client pauses hiring, and your network has nothing new in it.\n\nI build the system that fills the calendar {{RANDOM |without your personal involvement|hands-off for you|so the rainmaking isn't on you}}.\n\n{{RANDOM |Want a quick map of how this works for retained search specifically?|Mind if I send something useful instead of a pitch?|Want me to put a sample together for {{companyName}}?}}\n\n{{senderFirst}}"
           },
           {
             "_label": "Sample-of-20 (artifact-led)",
             "subject": "{{RANDOM |20 of these for {{companyName}}|sample for {{companyName}}|{{firstName}}, want 20?}}",
-            "body": "{{firstName}},<br><br>\n\n{{RANDOM |Spent 20 min on {{companyName}} this morning.|Took a quick look at {{companyName}} this morning.|Looked through {{companyName}} this morning.}}<br><br>\n\n{{RANDOM |If it's useful|If it'd help|If this is interesting}}, I can pull 20 verified contacts in your ICP - Heads of People / CHROs at companies actively scaling - and send them over. {{RANDOM |Yours whether we work together or not.|Yours regardless.|Free, no strings.}}<br><br>\n\nTakes me an hour. No pitch, just the list.<br><br>\n\n{{RANDOM |Want me to put it together for {{companyName}}?|Should I pull the 20 and send them?|Mind if I send the sample?}}<br><br>\n\n{{senderFirst}}"
+            "body": "{{firstName}},\n\n{{RANDOM |Spent 20 min on {{companyName}} this morning.|Took a quick look at {{companyName}} this morning.|Looked through {{companyName}} this morning.}}\n\n{{RANDOM |If it's useful|If it'd help|If this is interesting}}, I can pull 20 verified contacts in your ICP - Heads of People / CHROs at companies actively scaling - and send them over. {{RANDOM |Yours whether we work together or not.|Yours regardless.|Free, no strings.}}\n\nTakes me an hour. No pitch, just the list.\n\n{{RANDOM |Want me to put it together for {{companyName}}?|Should I pull the 20 and send them?|Mind if I send the sample?}}\n\n{{senderFirst}}"
           }
         ]
       },
@@ -98,7 +98,7 @@
           {
             "_label": "Day 3 — Insight (value, not re-pitch)",
             "subject": "",
-            "body": "{{firstName}}, {{RANDOM |quick add-on.|one more thought.|small follow-up.}}<br><br>\n\nCounterintuitive thing about retained-search outbound: the highest-reply prospects are VPs in their first 90 days at a new role, not C-suite. {{RANDOM |New VPs are trying to make their mark and stay open to vendors C-suite would filter out.|They're building their org and haven't built filters yet.}}<br><br>\n\nWorth knowing whether you outsource outbound or do it in-house.<br><br>\n\n{{senderFirst}}"
+            "body": "{{firstName}}, {{RANDOM |quick add-on.|one more thought.|small follow-up.}}\n\nCounterintuitive thing about retained-search outbound: the highest-reply prospects are VPs in their first 90 days at a new role, not C-suite. {{RANDOM |New VPs are trying to make their mark and stay open to vendors C-suite would filter out.|They're building their org and haven't built filters yet.}}\n\nWorth knowing whether you outsource outbound or do it in-house.\n\n{{senderFirst}}"
           }
         ]
       },
@@ -108,7 +108,7 @@
           {
             "_label": "Day 7 — Proof (concrete outcome)",
             "subject": "",
-            "body": "{{firstName}}, {{RANDOM |a quick data point|sharing a number|one stat worth knowing}}:<br><br>\n\nRetained-search firms running outbound at this scale typically land 2-3 qualified discovery calls per week from cold. Roughly 1 search engagement per month closes from that flow.<br><br>\n\nAll from inboxes the senior team never touches.<br><br>\n\n{{RANDOM |Want to see what that looks like for {{companyName}}?|Worth a quick walkthrough?|Open to seeing how this would work?}}<br><br>\n\n{{senderFirst}}"
+            "body": "{{firstName}}, {{RANDOM |a quick data point|sharing a number|one stat worth knowing}}:\n\nRetained-search firms running outbound at this scale typically land 2-3 qualified discovery calls per week from cold. Roughly 1 search engagement per month closes from that flow.\n\nAll from inboxes the senior team never touches.\n\n{{RANDOM |Want to see what that looks like for {{companyName}}?|Worth a quick walkthrough?|Open to seeing how this would work?}}\n\n{{senderFirst}}"
           }
         ]
       },
@@ -118,7 +118,7 @@
           {
             "_label": "Day 11 — Qualifier",
             "subject": "",
-            "body": "{{firstName}}, {{RANDOM |last attempt.|honest question.|one more.}}<br><br>\n\nIs filling the search pipeline something {{companyName}} is actively working on, or is it sorted for now?<br><br>\n\nEither answer is fine - just want to know if I should follow up later.<br><br>\n\n{{senderFirst}}"
+            "body": "{{firstName}}, {{RANDOM |last attempt.|honest question.|one more.}}\n\nIs filling the search pipeline something {{companyName}} is actively working on, or is it sorted for now?\n\nEither answer is fine - just want to know if I should follow up later.\n\n{{senderFirst}}"
           }
         ]
       },
@@ -128,7 +128,7 @@
           {
             "_label": "Day 17 — Door-open (clean exit)",
             "subject": "",
-            "body": "{{firstName}}, {{RANDOM |closing the loop here.|stepping back.|done following up.}}<br><br>\n\n{{RANDOM |Not going to push further.|Won't keep nudging.}} If retained-search prospect flow ever comes up for {{companyName}}, you have my email.<br><br>\n\n{{RANDOM |Best with the practice.|Good luck with the year.|Wishing you a strong year.}}<br><br>\n\n{{senderFirst}}"
+            "body": "{{firstName}}, {{RANDOM |closing the loop here.|stepping back.|done following up.}}\n\n{{RANDOM |Not going to push further.|Won't keep nudging.}} If retained-search prospect flow ever comes up for {{companyName}}, you have my email.\n\n{{RANDOM |Best with the practice.|Good luck with the year.|Wishing you a strong year.}}\n\n{{senderFirst}}"
           }
         ]
       }
@@ -150,12 +150,12 @@
           {
             "_label": "Founder Trap (frame-led)",
             "subject": "{{RANDOM |the math at {{companyName}}|{{firstName}}, agency math|quick read on {{companyName}}}}",
-            "body": "{{firstName}},<br><br>\n\nMost {{industryNiche}} agency founders are running a high-paying job, not a business. {{RANDOM |Every retainer comes from your network.|Every project traces back to someone you know.}} The agency has your name on it but runs on your relationships.<br><br>\n\n{{RANDOM |Works fine until two things happen at once|Fine until two things go wrong at the same time}} - a big client churns, and your network has nothing new in it.<br><br>\n\nI build the system that fills the calendar {{RANDOM |without your personal involvement|hands-off for you|so the rainmaking isn't on you}}.<br><br>\n\n{{RANDOM |Want a quick map of how this works for {{industryNiche}} agencies?|Mind if I send something useful instead of a pitch?|Want me to put a sample together for {{companyName}}?}}<br><br>\n\n{{senderFirst}}"
+            "body": "{{firstName}},\n\nMost {{industryNiche}} agency founders are running a high-paying job, not a business. {{RANDOM |Every retainer comes from your network.|Every project traces back to someone you know.}} The agency has your name on it but runs on your relationships.\n\n{{RANDOM |Works fine until two things happen at once|Fine until two things go wrong at the same time}} - a big client churns, and your network has nothing new in it.\n\nI build the system that fills the calendar {{RANDOM |without your personal involvement|hands-off for you|so the rainmaking isn't on you}}.\n\n{{RANDOM |Want a quick map of how this works for {{industryNiche}} agencies?|Mind if I send something useful instead of a pitch?|Want me to put a sample together for {{companyName}}?}}\n\n{{senderFirst}}"
           },
           {
             "_label": "Sample-of-20 (artifact-led)",
             "subject": "{{RANDOM |20 of these for {{companyName}}|sample for {{companyName}}|{{firstName}}, want 20?}}",
-            "body": "{{firstName}},<br><br>\n\n{{RANDOM |Spent 20 min on {{companyName}} this morning.|Took a quick look at {{companyName}} this morning.|Looked through {{companyName}} this morning.}}<br><br>\n\n{{RANDOM |If it's useful|If it'd help|If this is interesting}}, I can pull 20 verified contacts in your ICP - RevOps leaders / CMOs / Heads of Growth at companies that buy {{industryNiche}} services - and send them over. {{RANDOM |Yours whether we work together or not.|Yours regardless.|Free, no strings.}}<br><br>\n\nTakes me an hour. No pitch, just the list.<br><br>\n\n{{RANDOM |Want me to put it together for {{companyName}}?|Should I pull the 20 and send them?|Mind if I send the sample?}}<br><br>\n\n{{senderFirst}}"
+            "body": "{{firstName}},\n\n{{RANDOM |Spent 20 min on {{companyName}} this morning.|Took a quick look at {{companyName}} this morning.|Looked through {{companyName}} this morning.}}\n\n{{RANDOM |If it's useful|If it'd help|If this is interesting}}, I can pull 20 verified contacts in your ICP - RevOps leaders / CMOs / Heads of Growth at companies that buy {{industryNiche}} services - and send them over. {{RANDOM |Yours whether we work together or not.|Yours regardless.|Free, no strings.}}\n\nTakes me an hour. No pitch, just the list.\n\n{{RANDOM |Want me to put it together for {{companyName}}?|Should I pull the 20 and send them?|Mind if I send the sample?}}\n\n{{senderFirst}}"
           }
         ]
       },
@@ -165,7 +165,7 @@
           {
             "_label": "Day 3 — Insight (value, not re-pitch)",
             "subject": "",
-            "body": "{{firstName}}, {{RANDOM |quick add-on.|one more thought.|small follow-up.}}<br><br>\n\nCounterintuitive thing about agency outbound: the highest-reply prospects are VPs in their first 90 days at a new role, not C-suite. {{RANDOM |New VPs are trying to make their mark and stay open to vendors C-suite would filter out.|They're building their team and haven't built filters yet.}}<br><br>\n\nWorth knowing whether you outsource outbound or do it in-house.<br><br>\n\n{{senderFirst}}"
+            "body": "{{firstName}}, {{RANDOM |quick add-on.|one more thought.|small follow-up.}}\n\nCounterintuitive thing about agency outbound: the highest-reply prospects are VPs in their first 90 days at a new role, not C-suite. {{RANDOM |New VPs are trying to make their mark and stay open to vendors C-suite would filter out.|They're building their team and haven't built filters yet.}}\n\nWorth knowing whether you outsource outbound or do it in-house.\n\n{{senderFirst}}"
           }
         ]
       },
@@ -175,7 +175,7 @@
           {
             "_label": "Day 7 — Proof (concrete outcome)",
             "subject": "",
-            "body": "{{firstName}}, {{RANDOM |a quick data point|sharing a number|one stat worth knowing}}:<br><br>\n\nSpecialist agencies running outbound at this scale typically land 2-3 qualified discovery calls per week from cold. Roughly 1 retainer per month closes from that flow.<br><br>\n\nAll from inboxes the senior team never touches.<br><br>\n\n{{RANDOM |Want to see what that looks like for {{companyName}}?|Worth a quick walkthrough?|Open to seeing how this would work?}}<br><br>\n\n{{senderFirst}}"
+            "body": "{{firstName}}, {{RANDOM |a quick data point|sharing a number|one stat worth knowing}}:\n\nSpecialist agencies running outbound at this scale typically land 2-3 qualified discovery calls per week from cold. Roughly 1 retainer per month closes from that flow.\n\nAll from inboxes the senior team never touches.\n\n{{RANDOM |Want to see what that looks like for {{companyName}}?|Worth a quick walkthrough?|Open to seeing how this would work?}}\n\n{{senderFirst}}"
           }
         ]
       },
@@ -185,7 +185,7 @@
           {
             "_label": "Day 11 — Qualifier",
             "subject": "",
-            "body": "{{firstName}}, {{RANDOM |last attempt.|honest question.|one more.}}<br><br>\n\nIs filling the agency pipeline something {{companyName}} is actively working on, or is it sorted for now?<br><br>\n\nEither answer is fine - just want to know if I should follow up later.<br><br>\n\n{{senderFirst}}"
+            "body": "{{firstName}}, {{RANDOM |last attempt.|honest question.|one more.}}\n\nIs filling the agency pipeline something {{companyName}} is actively working on, or is it sorted for now?\n\nEither answer is fine - just want to know if I should follow up later.\n\n{{senderFirst}}"
           }
         ]
       },
@@ -195,7 +195,7 @@
           {
             "_label": "Day 17 — Door-open (clean exit)",
             "subject": "",
-            "body": "{{firstName}}, {{RANDOM |closing the loop here.|stepping back.|done following up.}}<br><br>\n\n{{RANDOM |Not going to push further.|Won't keep nudging.}} If outbound ever comes up for {{companyName}}, you have my email.<br><br>\n\n{{RANDOM |Best with the agency.|Good luck with the year.|Wishing you a strong year.}}<br><br>\n\n{{senderFirst}}"
+            "body": "{{firstName}}, {{RANDOM |closing the loop here.|stepping back.|done following up.}}\n\n{{RANDOM |Not going to push further.|Won't keep nudging.}} If outbound ever comes up for {{companyName}}, you have my email.\n\n{{RANDOM |Best with the agency.|Good luck with the year.|Wishing you a strong year.}}\n\n{{senderFirst}}"
           }
         ]
       }
@@ -217,12 +217,12 @@
           {
             "_label": "Founder Trap (frame-led)",
             "subject": "{{RANDOM |the math at {{companyName}}|{{firstName}}, agency math|quick read on {{companyName}}}}",
-            "body": "{{firstName}},<br><br>\n\nMost {{industryNiche}} agency founders are running a high-paying job, not a business. {{RANDOM |Every retainer comes from your network.|Every project traces back to someone you know.}} The agency has your name on it but runs on your relationships.<br><br>\n\n{{RANDOM |Works fine until two things happen at once|Fine until two things go wrong at the same time}} - a big client churns, and your network has nothing new in it.<br><br>\n\nI build the system that fills the calendar {{RANDOM |without your personal involvement|hands-off for you|so the rainmaking isn't on you}}.<br><br>\n\n{{RANDOM |Want a quick map of how this works for {{industryNiche}} agencies?|Mind if I send something useful instead of a pitch?|Want me to put a sample together for {{companyName}}?}}<br><br>\n\n{{senderFirst}}"
+            "body": "{{firstName}},\n\nMost {{industryNiche}} agency founders are running a high-paying job, not a business. {{RANDOM |Every retainer comes from your network.|Every project traces back to someone you know.}} The agency has your name on it but runs on your relationships.\n\n{{RANDOM |Works fine until two things happen at once|Fine until two things go wrong at the same time}} - a big client churns, and your network has nothing new in it.\n\nI build the system that fills the calendar {{RANDOM |without your personal involvement|hands-off for you|so the rainmaking isn't on you}}.\n\n{{RANDOM |Want a quick map of how this works for {{industryNiche}} agencies?|Mind if I send something useful instead of a pitch?|Want me to put a sample together for {{companyName}}?}}\n\n{{senderFirst}}"
           },
           {
             "_label": "Sample-of-20 (artifact-led)",
             "subject": "{{RANDOM |20 of these for {{companyName}}|sample for {{companyName}}|{{firstName}}, want 20?}}",
-            "body": "{{firstName}},<br><br>\n\n{{RANDOM |Spent 20 min on {{companyName}} this morning.|Took a quick look at {{companyName}} this morning.|Looked through {{companyName}} this morning.}}<br><br>\n\n{{RANDOM |If it's useful|If it'd help|If this is interesting}}, I can pull 20 verified contacts in your ICP - RevOps leaders / CMOs / Heads of Growth at companies that buy {{industryNiche}} services - and send them over. {{RANDOM |Yours whether we work together or not.|Yours regardless.|Free, no strings.}}<br><br>\n\nTakes me an hour. No pitch, just the list.<br><br>\n\n{{RANDOM |Want me to put it together for {{companyName}}?|Should I pull the 20 and send them?|Mind if I send the sample?}}<br><br>\n\n{{senderFirst}}"
+            "body": "{{firstName}},\n\n{{RANDOM |Spent 20 min on {{companyName}} this morning.|Took a quick look at {{companyName}} this morning.|Looked through {{companyName}} this morning.}}\n\n{{RANDOM |If it's useful|If it'd help|If this is interesting}}, I can pull 20 verified contacts in your ICP - RevOps leaders / CMOs / Heads of Growth at companies that buy {{industryNiche}} services - and send them over. {{RANDOM |Yours whether we work together or not.|Yours regardless.|Free, no strings.}}\n\nTakes me an hour. No pitch, just the list.\n\n{{RANDOM |Want me to put it together for {{companyName}}?|Should I pull the 20 and send them?|Mind if I send the sample?}}\n\n{{senderFirst}}"
           }
         ]
       },
@@ -232,7 +232,7 @@
           {
             "_label": "Day 3 — Insight (value, not re-pitch)",
             "subject": "",
-            "body": "{{firstName}}, {{RANDOM |quick add-on.|one more thought.|small follow-up.}}<br><br>\n\nCounterintuitive thing about agency outbound: the highest-reply prospects are VPs in their first 90 days at a new role, not C-suite. {{RANDOM |New VPs are trying to make their mark and stay open to vendors C-suite would filter out.|They're building their team and haven't built filters yet.}}<br><br>\n\nWorth knowing whether you outsource outbound or do it in-house.<br><br>\n\n{{senderFirst}}"
+            "body": "{{firstName}}, {{RANDOM |quick add-on.|one more thought.|small follow-up.}}\n\nCounterintuitive thing about agency outbound: the highest-reply prospects are VPs in their first 90 days at a new role, not C-suite. {{RANDOM |New VPs are trying to make their mark and stay open to vendors C-suite would filter out.|They're building their team and haven't built filters yet.}}\n\nWorth knowing whether you outsource outbound or do it in-house.\n\n{{senderFirst}}"
           }
         ]
       },
@@ -242,7 +242,7 @@
           {
             "_label": "Day 7 — Proof (concrete outcome)",
             "subject": "",
-            "body": "{{firstName}}, {{RANDOM |a quick data point|sharing a number|one stat worth knowing}}:<br><br>\n\nSpecialist agencies running outbound at this scale typically land 2-3 qualified discovery calls per week from cold. Roughly 1 retainer per month closes from that flow.<br><br>\n\nAll from inboxes the senior team never touches.<br><br>\n\n{{RANDOM |Want to see what that looks like for {{companyName}}?|Worth a quick walkthrough?|Open to seeing how this would work?}}<br><br>\n\n{{senderFirst}}"
+            "body": "{{firstName}}, {{RANDOM |a quick data point|sharing a number|one stat worth knowing}}:\n\nSpecialist agencies running outbound at this scale typically land 2-3 qualified discovery calls per week from cold. Roughly 1 retainer per month closes from that flow.\n\nAll from inboxes the senior team never touches.\n\n{{RANDOM |Want to see what that looks like for {{companyName}}?|Worth a quick walkthrough?|Open to seeing how this would work?}}\n\n{{senderFirst}}"
           }
         ]
       },
@@ -252,7 +252,7 @@
           {
             "_label": "Day 11 — Qualifier",
             "subject": "",
-            "body": "{{firstName}}, {{RANDOM |last attempt.|honest question.|one more.}}<br><br>\n\nIs filling the agency pipeline something {{companyName}} is actively working on, or is it sorted for now?<br><br>\n\nEither answer is fine - just want to know if I should follow up later.<br><br>\n\n{{senderFirst}}"
+            "body": "{{firstName}}, {{RANDOM |last attempt.|honest question.|one more.}}\n\nIs filling the agency pipeline something {{companyName}} is actively working on, or is it sorted for now?\n\nEither answer is fine - just want to know if I should follow up later.\n\n{{senderFirst}}"
           }
         ]
       },
@@ -262,7 +262,7 @@
           {
             "_label": "Day 17 — Door-open (clean exit)",
             "subject": "",
-            "body": "{{firstName}}, {{RANDOM |closing the loop here.|stepping back.|done following up.}}<br><br>\n\n{{RANDOM |Not going to push further.|Won't keep nudging.}} If outbound ever comes up for {{companyName}}, you have my email.<br><br>\n\n{{RANDOM |Best with the agency.|Good luck with the year.|Wishing you a strong year.}}<br><br>\n\n{{senderFirst}}"
+            "body": "{{firstName}}, {{RANDOM |closing the loop here.|stepping back.|done following up.}}\n\n{{RANDOM |Not going to push further.|Won't keep nudging.}} If outbound ever comes up for {{companyName}}, you have my email.\n\n{{RANDOM |Best with the agency.|Good luck with the year.|Wishing you a strong year.}}\n\n{{senderFirst}}"
           }
         ]
       }
