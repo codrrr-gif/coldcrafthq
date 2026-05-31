@@ -35,3 +35,10 @@ apis.txt
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# Claude Code — commit shared config (settings.json, hooks/, skills/) but never
+# personal or runtime state:
+.claude/settings.local.json
+.claude/projects/
+.claude/*.lock
+.claude/scheduled_tasks.lock
