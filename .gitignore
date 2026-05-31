@@ -42,3 +42,10 @@ next-env.d.ts
 
 # niche-2026 list-build artifacts (large CSVs, smoke tests)
 /data/niche-2026/
+
+# Claude Code — commit shared config (settings.json, hooks/, skills/) but never
+# personal or runtime state:
+.claude/settings.local.json
+.claude/projects/
+.claude/*.lock
+.claude/scheduled_tasks.lock
